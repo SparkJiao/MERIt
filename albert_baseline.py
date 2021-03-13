@@ -39,10 +39,9 @@ from transformers import (
     default_data_collator,
     set_seed,
 )
-from transformers.file_utils import PaddingStrategy
+from transformers.tokenization_utils_base import PaddingStrategy
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
-
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +77,7 @@ class ModelArguments:
         default=False,
         metadata={
             "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
-            "with private models)."
+                    "with private models)."
         },
     )
 
@@ -105,29 +104,29 @@ class DataTrainingArguments:
         default=None,
         metadata={
             "help": "The maximum total input sequence length after tokenization. If passed, sequences longer "
-            "than this will be truncated, sequences shorter will be padded."
+                    "than this will be truncated, sequences shorter will be padded."
         },
     )
     pad_to_max_length: bool = field(
         default=False,
         metadata={
             "help": "Whether to pad all samples to the maximum sentence length. "
-            "If False, will pad the samples dynamically when batching to the maximum length in the batch. More "
-            "efficient on GPU but very bad for TPU."
+                    "If False, will pad the samples dynamically when batching to the maximum length in the batch. More "
+                    "efficient on GPU but very bad for TPU."
         },
     )
     max_train_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
-            "value if set."
+                    "value if set."
         },
     )
     max_val_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of validation examples to this "
-            "value if set."
+                    "value if set."
         },
     )
 
@@ -226,7 +225,7 @@ def main():
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
-        handlers=[logging.StreamHandler(sys.stdout)],
+        handlers=[logging.StreamHandler(sys.stdout)]
     )
     logger.setLevel(logging.INFO if is_main_process(training_args.local_rank) else logging.WARN)
 
@@ -337,7 +336,7 @@ def main():
             padding="max_length" if data_args.pad_to_max_length else False,
         )
         # Un-flatten
-        return {k: [v[i : i + 4] for i in range(0, len(v), 4)] for k, v in tokenized_examples.items()}
+        return {k: [v[i: i + 4] for i in range(0, len(v), 4)] for k, v in tokenized_examples.items()}
 
     if training_args.do_train:
         train_dataset = datasets["train"]
