@@ -1,0 +1,7 @@
+train_file:
+val_file:
+test_file:
+
+get_dataset:
+  _target_: datasets.reclor_pure.get_dataset
+  max_seq_length: 512

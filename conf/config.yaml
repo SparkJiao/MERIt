@@ -1,0 +1,72 @@
+hydra:
+  run:
+    dir: ./
+
+train_file: tod-corpus/unified_dialogs.span.0.3_1.0_42.train.json.512.128.bert
+dev_file: tod-corpus/unified_dialogs.span.0.3_1.0_42.dev.json.512.128.bert
+
+# Model
+model:
+#  _target_: models.modeling_bert_retrieval.BertForRetrievalPreTrain.from_pretrained
+#  _target_: models.modeling_bert_retrieval_reverse.BertForRetrievalReversePreTrain.from_pretrained
+  _target_: models.modeling_bert_retrieval_self_bias.BertForRetrievalSelfBiasPreTrain.from_pretrained
+#  _target_: models.modeling_bert_retrieval_self_query.BertForRetrievalSelfQueryPreTrain.from_pretrained
+  z_step: 2
+  pos_query_layer: 1
+  max_relative_positions: 16
+  position_buckets: -1
+  mha_residual: True
+  mha_proj_bias: True
+  add_ff: False
+  add_self_attention: True
+  share_attn: False
+
+# Data collator
+collator:
+  _target_: processors.dialog_span_converting_features.DataCollator
+
+# Dataloader
+num_workers: 4
+prefetch_factor: 2
+
+
+model_name_or_path: pretrained-models/bert-base-uncased
+pretrain:
+
+output_dir: share/pt.dialog_span.self_bias.no_ff.1.0.fsddp.10k
+
+do_train: True
+evaluate_during_training: True
+
+# Training hyper-parameters
+per_gpu_train_batch_size: 3
+per_gpu_eval_batch_size: 3
+learning_rate: 5e-5
+gradient_accumulation_steps: 21
+weight_decay: 0.01
+adam_epsilon: 1e-6
+max_grad_norm: 1.0
+num_train_epochs: 10
+max_steps: 10000
+warmup_proportion: 0.0
+warmup_steps: 500
+
+
+logging_steps: 5
+save_steps: 2000
+eval_steps: 500
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O1
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: False
+cpu_offload: False
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:
