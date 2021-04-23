@@ -4,36 +4,32 @@ hydra:
 
 train_file: tod-corpus/unified_dialogs.span.0.3_1.0_42.train.json.512.128.bert
 dev_file: tod-corpus/unified_dialogs.span.0.3_1.0_42.dev.json.512.128.bert
+test_file:
 
 # Model
 model:
-#  _target_: models.modeling_bert_retrieval.BertForRetrievalPreTrain.from_pretrained
-#  _target_: models.modeling_bert_retrieval_reverse.BertForRetrievalReversePreTrain.from_pretrained
-  _target_: models.modeling_bert_retrieval_self_bias.BertForRetrievalSelfBiasPreTrain.from_pretrained
-#  _target_: models.modeling_bert_retrieval_self_query.BertForRetrievalSelfQueryPreTrain.from_pretrained
-  z_step: 2
-  pos_query_layer: 1
-  max_relative_positions: 16
-  position_buckets: -1
-  mha_residual: True
-  mha_proj_bias: True
-  add_ff: False
-  add_self_attention: True
-  share_attn: False
+  _target_: models.albert_sent.AlbertSentenceMCQA.from_pretrained
+
+# Data loading
+read_tensor:
+  _target_: datasets.reclor_sentence.convert_examples_into_features
+
 
 # Data collator
 collator:
-  _target_: processors.dialog_span_converting_features.DataCollator
+  _target_: datasets.data_collators.ReClorSentenceCollator
+  max_seq_length: 220
+  num_workers: 16
 
 # Dataloader
 num_workers: 4
 prefetch_factor: 2
 
 
-model_name_or_path: pretrained-models/bert-base-uncased
+model_name_or_path: pretrained-models/albert--xxlarge-v2
 pretrain:
 
-output_dir: share/pt.dialog_span.self_bias.no_ff.1.0.fsddp.10k
+output_dir:
 
 do_train: True
 evaluate_during_training: True

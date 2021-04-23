@@ -36,7 +36,7 @@ from torch import distributed as dist
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
-from transformers import (AdamW, get_linear_schedule_with_warmup, AutoTokenizer)
+from transformers import (AdamW, get_linear_schedule_with_warmup, AutoTokenizer, PreTrainedTokenizer)
 
 from general_util.logger import setting_logger
 
@@ -267,7 +267,7 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
                 if cfg.evaluate_during_training and cfg.eval_steps > 0 and global_step % cfg.eval_steps == 0:
 
                     if cfg.local_rank in [-1, 0]:
-                        results = evaluate(cfg, model)
+                        results = evaluate(cfg, model, tokenizer, prefix=str(global_step), _split="dev")
                         for key, value in results.items():
                             tb_writer.add_scalar(f"eval/{key}", value, global_step)
 
@@ -285,8 +285,8 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
     return global_step, tr_loss / global_step
 
 
-def evaluate(cfg, model, prefix=""):
-    dataset, features = load_and_cache_examples(cfg, _evaluate=True)
+def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"):
+    dataset, features = load_and_cache_examples(cfg, tokenizer, _split=_split)
 
     if not os.path.exists(cfg.output_dir) and cfg.local_rank in [-1, 0]:
         os.makedirs(cfg.output_dir)
@@ -299,7 +299,7 @@ def evaluate(cfg, model, prefix=""):
     single_model_gpu = unwrap_model(model)
     single_model_gpu.get_eval_log(reset=True)
     # Eval!
-    logger.info("***** Running evaluation {} *****".format(prefix))
+    logger.info("***** Running evaluation {}.{} *****".format(_split, prefix))
     logger.info("  Num examples = %d", len(dataset))
     logger.info("  Batch size = %d", cfg.eval_batch_size)
     # Seems FSDP does not need to unwrap the model for evaluating.
@@ -308,13 +308,6 @@ def evaluate(cfg, model, prefix=""):
         batch = batch_to_device(batch, cfg.device)
 
         with torch.no_grad():
-            # It seems that FSDP is not compatible with evaluating with single gpu.
-            # It also not compatible ``single_model_gpu``.
-            # if cfg.fp16:
-            #     with torch.cuda.amp.autocast():
-            #         outputs = single_model_gpu(**batch)
-            # else:
-            #     outputs = single_model_gpu(**batch)
             outputs = model(**batch)
 
     metric_log, results = single_model_gpu.get_eval_log(reset=True)
@@ -325,22 +318,22 @@ def evaluate(cfg, model, prefix=""):
     return results
 
 
-def load_and_cache_examples(cfg, _evaluate=False):
-    if cfg.local_rank not in [-1, 0] and not _evaluate:
+def load_and_cache_examples(cfg, tokenizer: PreTrainedTokenizer, _split="train"):
+    if cfg.local_rank not in [-1, 0] and _split == "train":
         dist.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
-    # Load data features from cache or dataset file
-    cached_file = cfg.train_file if not _evaluate else cfg.dev_file
-    cached_features = f"{cached_file}.feat"
-    cached_tensors = f"{cached_file}.tensor"
-    if os.path.exists(cached_tensors):  # and not output_examples:
-        logger.info("Loading features from cached file %s", cached_features)
-        tensors = torch.load(cached_tensors)
-        features = torch.load(cached_features)
+    if _split == "train":
+        input_file = cfg.train_file
+    elif _split == "dev":
+        input_file = cfg.dev_file
+    elif _split == "test":
+        input_file = cfg.test_file
     else:
-        raise NotImplementedError
+        raise RuntimeError(_split)
 
-    if cfg.local_rank == 0 and not _evaluate:
+    examples, features, tensors = hydra.utils.call(cfg.read_tensor, file_path=input_file, tokenizer=tokenizer)
+
+    if cfg.local_rank == 0 and _split == "train":
         dist.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     dataset = TensorDataset(*tensors)
@@ -412,7 +405,7 @@ def main(cfg: DictConfig) -> None:
         #         model = model_class.from_pretrained(checkpoint)
         #         model.to(args.device)
 
-        train_dataset, features = load_and_cache_examples(cfg, _evaluate=False)
+        train_dataset, features = load_and_cache_examples(cfg, tokenizer, _split="train")
         global_step, tr_loss = train(cfg, train_dataset, features, model, tokenizer, continue_from_global_step)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
