@@ -341,7 +341,7 @@ def load_and_cache_examples(cfg, tokenizer: PreTrainedTokenizer, _split="train")
     return dataset, features
 
 
-@hydra.main(config_path="conf", config_name="retrieval_pretraining_self")
+@hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     if cfg.local_rank == -1 or cfg.no_cuda:
         device = str(torch.device("cuda" if torch.cuda.is_available() and not cfg.no_cuda else "cpu"))

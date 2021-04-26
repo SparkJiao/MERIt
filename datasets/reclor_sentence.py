@@ -88,6 +88,7 @@ def _convert_example_to_features(example: Dict, tokenizer: PreTrainedTokenizer, 
                                                                        question_tokens + sep_tokens + opt_tokens,
                                                                        num_tokens_to_remove=lens_to_remove,
                                                                        truncation_strategy=TruncationStrategy.ONLY_FIRST)
+
         c_tokens, q_op_tokens = [], []
         sent_id_map = Counter()
 
@@ -95,7 +96,7 @@ def _convert_example_to_features(example: Dict, tokenizer: PreTrainedTokenizer, 
             sent_id_map[_sent_id] += 1
             c_tokens.append(_tok)
 
-        for _tok in q_op_tokens:
+        for _tok in tru_q_o_tokens:
             if isinstance(_tok, tuple):
                 _sent_id, _tok = _tok
                 q_op_tokens.append(_tok)
@@ -109,17 +110,18 @@ def _convert_example_to_features(example: Dict, tokenizer: PreTrainedTokenizer, 
         sent_spans = []
         for i in range(len(context_sentences) + 2):
             if i == _q_sent_id_offset or i == _op_sent_id_offset:
-                sent_span_offset += (tokenizer.model_max_length - tokenizer.max_len_sentences_pair)  # [SEP]
+                sent_span_offset += (tokenizer.max_len_single_sentence - tokenizer.max_len_sentences_pair)  # [SEP]
             if i in sent_id_map:
                 _cur_len = sent_id_map.pop(i)
                 sent_spans.append((sent_span_offset, sent_span_offset + _cur_len))
-                sent_spans += _cur_len
+                sent_span_offset += _cur_len
         assert not sent_id_map
 
-        tokenizer_outputs = tokenizer.encode_plus(c_tokens,
-                                                  text_pair=q_op_tokens,
-                                                  padding=PaddingStrategy.MAX_LENGTH,
-                                                  max_length=max_seq_length)
+        tokenizer_outputs = tokenizer(tokenizer.convert_tokens_to_string(c_tokens),
+                                      text_pair=tokenizer.convert_tokens_to_string(q_op_tokens),
+                                      padding=PaddingStrategy.MAX_LENGTH,
+                                      max_length=max_seq_length)
+        assert len(tokenizer_outputs["input_ids"]) == max_seq_length, (len(c_tokens), len(q_op_tokens), len(tokenizer_outputs["input_ids"]))
         features.append({
             "input_ids": tokenizer_outputs["input_ids"],
             "attention_mask": tokenizer_outputs["attention_mask"],

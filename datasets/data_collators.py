@@ -6,9 +6,9 @@ from torch import Tensor
 
 class ReClorSentenceCollator:
     def __call__(self, batch: List[Tuple[Tensor, ...]]) -> Dict[str, Tensor]:
-        if len(batch) == 5:
+        if len(batch[0]) == 5:
             input_ids, attention_mask, token_type_ids, labels, sentence_spans = list(zip(*batch))
-        elif len(batch) == 4:
+        elif len(batch[0]) == 4:
             input_ids, attention_mask, labels, sentence_spans = list(zip(*batch))
             token_type_ids = None
         else:
