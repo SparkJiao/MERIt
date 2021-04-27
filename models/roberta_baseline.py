@@ -1,12 +1,13 @@
 from abc import ABC
 
-from torch import nn
+from torch import nn, Tensor
 from torch.nn import CrossEntropyLoss
 from transformers.modeling_outputs import MultipleChoiceModelOutput
 from transformers.models.roberta.modeling_roberta import RobertaModel, RobertaPreTrainedModel, RobertaConfig
 
 from general_util.logger import get_child_logger
 from general_util.mixin import LogMixin
+from modules import layers
 
 logger = get_child_logger("RoBERTa")
 
@@ -23,17 +24,23 @@ class RobertaForMultipleChoice(RobertaPreTrainedModel, LogMixin, ABC):
 
         self.init_weights()
 
-        self.init_metric("loss", "accuracy")
+        self.init_metric("loss", "acc")
+
+    @staticmethod
+    def fold_tensor(x):
+        if x is None:
+            return x
+        return x.reshape(-1, x.size(-1))
 
     def forward(
             self,
-            input_ids=None,
-            token_type_ids=None,
-            attention_mask=None,
-            labels=None,
-            position_ids=None,
-            head_mask=None,
-            inputs_embeds=None,
+            input_ids: Tensor,
+            attention_mask: Tensor = None,
+            token_type_ids: Tensor = None,
+            labels: Tensor = None,
+            sentence_index: Tensor = None,
+            sentence_mask: Tensor = None,
+            sent_token_mask: Tensor = None,
             output_attentions=None,
             output_hidden_states=None,
             return_dict=None,
@@ -45,25 +52,16 @@ class RobertaForMultipleChoice(RobertaPreTrainedModel, LogMixin, ABC):
             :obj:`input_ids` above)
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        num_choices = input_ids.shape[1] if input_ids is not None else inputs_embeds.shape[1]
+        num_choices = input_ids.shape[1]
 
-        flat_input_ids = input_ids.view(-1, input_ids.size(-1)) if input_ids is not None else None
-        flat_position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
-        flat_token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1)) if token_type_ids is not None else None
-        flat_attention_mask = attention_mask.view(-1, attention_mask.size(-1)) if attention_mask is not None else None
-        flat_inputs_embeds = (
-            inputs_embeds.view(-1, inputs_embeds.size(-2), inputs_embeds.size(-1))
-            if inputs_embeds is not None
-            else None
-        )
+        input_ids = self.fold_tensor(input_ids)
+        attention_mask = self.fold_tensor(attention_mask)
+        token_type_ids = self.fold_tensor(token_type_ids)
 
         outputs = self.roberta(
-            flat_input_ids,
-            position_ids=flat_position_ids,
-            token_type_ids=flat_token_type_ids,
-            attention_mask=flat_attention_mask,
-            head_mask=head_mask,
-            inputs_embeds=flat_inputs_embeds,
+            input_ids,
+            token_type_ids=token_type_ids,
+            attention_mask=attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -78,6 +76,11 @@ class RobertaForMultipleChoice(RobertaPreTrainedModel, LogMixin, ABC):
         if labels is not None:
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(reshaped_logits, labels)
+
+            if not self.training:
+                acc, true_label_num = layers.get_accuracy(reshaped_logits, labels)
+                self.eval_metrics.update("acc", val=acc, n=true_label_num)
+                self.eval_metrics.update("loss", val=loss.item(), n=true_label_num)
 
         if not return_dict:
             output = (reshaped_logits,) + outputs[2:]

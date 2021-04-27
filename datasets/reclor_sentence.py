@@ -61,15 +61,19 @@ def _convert_example_to_features(example: Dict, tokenizer: PreTrainedTokenizer, 
     context_sentences = [sent for sent in sent_tokenize(context) if sent]
 
     context_tokens = []
-    if is_bpe(tokenizer):
-        specific_args = {"add_prefix_space": True}
-    else:
-        specific_args = {}
+    # It seems the arg is not supported in transformers==4.5.1
+    # if is_bpe(tokenizer):
+    #     specific_args = {"add_prefix_space": True}
+    # else:
+    #     specific_args = {}
     for _sent_id, _sent in enumerate(context_sentences):
-        if _sent_id > 0:
-            _sent_tokens = tokenizer.tokenize(_sent, **specific_args)
-        else:
-            _sent_tokens = tokenizer.tokenize(_sent)
+        # if _sent_id > 0:
+        #     _sent_tokens = tokenizer.tokenize(_sent, **specific_args)
+        # else:
+        #     _sent_tokens = tokenizer.tokenize(_sent)
+        if is_bpe(tokenizer):
+            _sent = " " + _sent
+        _sent_tokens = tokenizer.tokenize(_sent)
         context_tokens.extend([(_sent_id, _tok) for _tok in _sent_tokens])
 
     _q_sent_id_offset = len(context_sentences)
@@ -142,7 +146,7 @@ def _data_to_tensors(features: List[Dict]):
 
     input_ids = torch.tensor([[op["input_ids"] for op in f["features"]] for f in features])
     attention_mask = torch.tensor([[op["attention_mask"] for op in f["features"]] for f in features], dtype=torch.long)
-    if "token_type_ids" in features[0]["features"][0]:
+    if features[0]["features"][0]["token_type_ids"] is not None:
         token_type_ids = torch.tensor([[op["token_type_ids"] for op in f["features"]] for f in features], dtype=torch.long)
     else:
         token_type_ids = None

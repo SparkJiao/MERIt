@@ -73,13 +73,21 @@ def unwrap_model(model: torch.nn.Module) -> torch.nn.Module:
         return model
 
 
-def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, output_dir: str):
+def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
+    # Save model checkpoint.
     if cfg.local_rank != -1:
         state_dict = model.state_dict()
         if cfg.local_rank == 0:
             unwrap_model(model).save_pretrained(output_dir, state_dict=state_dict)
     else:
         model.save_pretrained(output_dir)
+
+    # Save tokenizer and training args.
+    if cfg.local_rank in [-1, 0]:
+        if tokenizer is not None:
+            tokenizer.save_pretrained(output_dir)
+        OmegaConf.save(cfg, os.path.join(output_dir, "training_config.yaml"))
+        logger.info("Saving model checkpoint to %s", output_dir)
 
 
 def batch_to_device(batch: Dict[str, torch.Tensor], device):
@@ -256,16 +264,16 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
                     output_dir = os.path.join(cfg.output_dir, 'checkpoint-{}'.format(global_step))
                     if cfg.local_rank in [-1, 0] and not os.path.exists(output_dir):
                         os.makedirs(output_dir)
-                    save_model(model, cfg, output_dir)
-                    if cfg.local_rank in [-1, 0]:
-                        tokenizer.save_pretrained(output_dir)
-                        torch.save(cfg, os.path.join(output_dir, 'training_args.bin'))
-                        logger.info("Saving model checkpoint to %s", output_dir)
-                        torch.cuda.empty_cache()
+                    # save_model(model, cfg, output_dir)
+                    # if cfg.local_rank in [-1, 0]:
+                    #     tokenizer.save_pretrained(output_dir)
+                    #     torch.save(cfg, os.path.join(output_dir, 'training_args.bin'))
+                    #     logger.info("Saving model checkpoint to %s", output_dir)
+                    #     torch.cuda.empty_cache()
+                    save_model(model, cfg, output_dir, tokenizer)
 
                 # Evaluation
                 if cfg.evaluate_during_training and cfg.eval_steps > 0 and global_step % cfg.eval_steps == 0:
-
                     if cfg.local_rank in [-1, 0]:
                         results = evaluate(cfg, model, tokenizer, prefix=str(global_step), _split="dev")
                         for key, value in results.items():
