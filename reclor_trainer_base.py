@@ -153,7 +153,7 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
             {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
              'weight_decay': 0.0}
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon)
+        optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
 
     if cfg.fp16:
@@ -186,6 +186,8 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
         ]
         optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon)
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
+
+    logger.info(optimizer)
 
     # Train!
     logger.info("***** Running training *****")
@@ -236,12 +238,13 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
                 if cfg.fp16:
                     scaler.unscale_(optimizer)
 
-                if hasattr(optimizer, "clip_grad_norm"):
-                    optimizer.clip_grad_norm(cfg.max_grad_norm)
-                elif hasattr(model, "clip_grad_norm_"):
-                    model.clip_grad_norm_(cfg.max_grad_norm)
-                else:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
+                if cfg.max_grad_norm:
+                    if hasattr(optimizer, "clip_grad_norm"):
+                        optimizer.clip_grad_norm(cfg.max_grad_norm)
+                    elif hasattr(model, "clip_grad_norm_"):
+                        model.clip_grad_norm_(cfg.max_grad_norm)
+                    else:
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
 
                 if cfg.fp16:
                     scaler.step(optimizer)

@@ -29,18 +29,19 @@ prefetch_factor: 2
 model_name_or_path: pretrained-models/roberta-base
 pretrain:
 
-output_dir: experiments/roberta.base.1.0
+output_dir: experiments/roberta.base.3.0
 
 do_train: True
 evaluate_during_training: True
 
 # Training hyper-parameters
-per_gpu_train_batch_size: 6
-per_gpu_eval_batch_size: 6
-learning_rate: 1e-5
-gradient_accumulation_steps: 4
+per_gpu_train_batch_size: 8
+per_gpu_eval_batch_size: 8
+learning_rate: 8e-6
+gradient_accumulation_steps: 3
 weight_decay: 0.01
 adam_epsilon: 1e-6
+adam_betas: "(0.9, 0.98)"
 max_grad_norm: 0.0
 num_train_epochs: 10
 max_steps: 0

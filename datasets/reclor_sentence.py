@@ -1,36 +1,20 @@
 import json
 import os
-from nltk import sent_tokenize
-from multiprocessing import Pool
+from collections import Counter
 from functools import partial
-from tqdm import tqdm
+from multiprocessing import Pool
+from typing import Dict, List
 
 import torch
-from torch import Tensor
-from typing import Tuple, Callable, Union, Dict, List
-from torch.utils.data import TensorDataset, Dataset
-from transformers import PreTrainedTokenizer, RobertaTokenizer
-from transformers.tokenization_utils_base import PaddingStrategy, TruncationStrategy, TensorType
-from collections import Counter
+from nltk import sent_tokenize
+from tqdm import tqdm
+from transformers import PreTrainedTokenizer
+from transformers.tokenization_utils_base import PaddingStrategy, TruncationStrategy
 
+from datasets.data_utils import get_sep_tokens, is_bpe
 from general_util.logger import get_child_logger
 
 logger = get_child_logger("ReClor.Sentence")
-
-
-def is_bpe(_tokenizer: PreTrainedTokenizer):
-    return _tokenizer.__class__.__name__ in [
-        "RobertaTokenizer",
-        "LongformerTokenizer",
-        "BartTokenizer",
-        "RobertaTokenizerFast",
-        "LongformerTokenizerFast",
-        "BartTokenizerFast",
-    ]
-
-
-def get_sep_tokens(_tokenizer: PreTrainedTokenizer):
-    return [_tokenizer.sep_token] * (_tokenizer.max_len_single_sentence - _tokenizer.max_len_sentences_pair)
 
 
 def read_examples(file_path: str):
