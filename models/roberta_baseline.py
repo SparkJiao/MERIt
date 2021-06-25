@@ -3,7 +3,7 @@ from abc import ABC
 from torch import nn, Tensor
 from torch.nn import CrossEntropyLoss
 from transformers.modeling_outputs import MultipleChoiceModelOutput
-from transformers.models.roberta.modeling_roberta import RobertaModel, RobertaPreTrainedModel, RobertaConfig
+from transformers.models.roberta.modeling_roberta import RobertaModel, RobertaPreTrainedModel, RobertaConfig, RobertaLMHead
 
 from general_util.logger import get_child_logger
 from general_util.mixin import LogMixin
@@ -19,6 +19,7 @@ class RobertaForMultipleChoice(RobertaPreTrainedModel, LogMixin, ABC):
         super().__init__(config)
 
         self.roberta = RobertaModel(config)
+        self.lm_head = RobertaLMHead(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
 
@@ -41,6 +42,7 @@ class RobertaForMultipleChoice(RobertaPreTrainedModel, LogMixin, ABC):
             sentence_index: Tensor = None,
             sentence_mask: Tensor = None,
             sent_token_mask: Tensor = None,
+            mlm_labels: Tensor = None,
             output_attentions=None,
             output_hidden_states=None,
             return_dict=None,
@@ -72,10 +74,18 @@ class RobertaForMultipleChoice(RobertaPreTrainedModel, LogMixin, ABC):
         logits = self.classifier(pooled_output)
         reshaped_logits = logits.view(-1, num_choices)
 
+        choice_mask = (attention_mask.sum(dim=-1) == 0).reshape(-1, num_choices)
+        reshaped_logits = reshaped_logits + choice_mask * -10000.0
+
         loss = None
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
+            loss_fct = CrossEntropyLoss(ignore_index=-1)
             loss = loss_fct(reshaped_logits, labels)
+
+            if mlm_labels is not None:
+                mlm_scores = self.lm_head(outputs[0])
+                mlm_loss = loss_fct(mlm_scores.reshape(-1, self.config.vocab_size), mlm_labels.reshape(-1))
+                loss += mlm_loss
 
             if not self.training:
                 acc, true_label_num = layers.get_accuracy(reshaped_logits, labels)

@@ -1,0 +1,87 @@
+hydra:
+  run:
+    dir: ./
+
+#train_file: reclor_data/train.json
+#train_file: reclor_data/train.mask-aug.json
+#train_file: reclor_data/train.mask-aug.common.json
+#train_file: reclor_data/train.mask-aug.common-all.json
+train_file: reclor_data/train.mask-aug.common.all_np.json
+dev_file: reclor_data/val.json
+test_file: reclor_data/test.json
+
+# Model
+model:
+#  _target_: models.albert_sent.AlbertSentenceMCQA.from_pretrained
+  _target_: models.roberta_baseline.RobertaForMultipleChoice.from_pretrained
+
+# Data loading
+read_tensor:
+  _target_: datasets.reclor_sentence_mask_aug.convert_examples_into_features
+  add_mlm: True
+  max_seq_length: 256
+  num_workers: 2
+
+# Data collator
+collator:
+#  _target_: datasets.data_collators.ReClorSentenceCollator
+  _target_: datasets.data_collators.ReClorSentenceMLMCollator
+
+# Dataloader
+num_workers: 4
+prefetch_factor: 2
+
+
+model_name_or_path: pretrained-models/roberta-large
+pretrain:
+
+#output_dir: experiments/roberta.base.aug-mask.common-all.1.0
+#output_dir: experiments/roberta.base.aug-mask.common.1.1
+#output_dir: experiments/roberta.large.aug-mask.common.1.0
+#output_dir: experiments/roberta.large.1.0
+#output_dir: experiments/roberta.large.aug-mask.common.mlm.1.0-true
+#output_dir: experiments/roberta.large.aug-mask.common.all_np.1.1
+#output_dir: experiments/roberta.large.aug-mask.common.all_np.1.2
+#output_dir: experiments/roberta.large.aug-mask.common.all_np.mlm.1.0
+output_dir: experiments/roberta.large.aug-mask.common.all_np.mlm.1.2
+#output_dir: experiments/roberta.large.2.0
+
+do_train: True
+evaluate_during_training: True
+
+# Training hyper-parameters
+#per_gpu_train_batch_size: 8
+#per_gpu_eval_batch_size: 8
+per_gpu_train_batch_size: 1
+per_gpu_eval_batch_size: 1
+learning_rate: 1e-5
+#learning_rate: 2e-5
+gradient_accumulation_steps: 24
+weight_decay: 0.01
+adam_epsilon: 1e-6
+adam_betas: "(0.9, 0.98)"
+max_grad_norm: 0.0
+num_train_epochs: 10
+max_steps: 0
+warmup_proportion: 0.1
+warmup_steps: 0
+
+
+logging_steps: 5
+save_steps: 200
+eval_steps: 200
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O1
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: False
+cpu_offload: False
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:

@@ -1,11 +1,9 @@
 from abc import ABC
 
-import torch
 from torch import nn, Tensor
 from torch.nn import CrossEntropyLoss
-
-from transformers.models.albert import AlbertModel, AlbertConfig, AlbertPreTrainedModel
 from transformers.modeling_outputs import MultipleChoiceModelOutput
+from transformers.models.albert import AlbertModel, AlbertConfig, AlbertPreTrainedModel
 
 from general_util.logger import get_child_logger
 from general_util.mixin import LogMixin

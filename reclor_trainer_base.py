@@ -177,7 +177,11 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
         model = FullyShardedDDP(model,
                                 mixed_precision=cfg.fp16,
                                 reshard_after_forward=cfg.reshard_after_forward,
-                                cpu_offload=cfg.cpu_offload).to(cfg.device)
+                                cpu_offload=cfg.cpu_offload,
+                                move_grads_to_cpu=cfg.move_grads_to_cpu)
+        # move_params_to_cpu=cfg.move_params_to_cpu).to(cfg.device)
+        if not cfg.cpu_offload:
+            model = model.to(cfg.device)
 
         no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
         optimizer_grouped_parameters = [

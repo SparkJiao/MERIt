@@ -2,23 +2,23 @@ hydra:
   run:
     dir: ./
 
-train_file: reclor_data/train.json
+#train_file: reclor_data/train.neg-aug.json
+train_file: reclor_data/train.mask-aug.common.json
 dev_file: reclor_data/val.json
 test_file: reclor_data/test.json
 
 # Model
 model:
-#  _target_: models.albert_sent.AlbertSentenceMCQA.from_pretrained
-#  use_checkpointing: True
-#  offload_to_cpu: False
-#  return_dict: False
-  _target_: models.roberta_baseline.RobertaForMultipleChoice.from_pretrained
+  _target_: models.albert_sent.AlbertSentenceMCQA.from_pretrained
+  use_checkpointing: True
+  offload_to_cpu: False
+  return_dict: False
+#  _target_: models.roberta_baseline.RobertaForMultipleChoice.from_pretrained
 
 # Data loading
 read_tensor:
-  _target_: datasets.reclor_sentence.convert_examples_into_features
-#  max_seq_length: 256
-  max_seq_length: 220
+  _target_: datasets.reclor_sentence_mask_aug.convert_examples_into_features
+  max_seq_length: 256
   num_workers: 2
 
 # Data collator
@@ -33,8 +33,8 @@ prefetch_factor: 2
 model_name_or_path: pretrained-models/albert-xxlarge-v2
 pretrain:
 
-#output_dir: experiments/roberta.base.2.0
-output_dir: experiments/albert.xxlarge-v2.2.0
+#output_dir: experiments/albert.xxlarge-v2.neg-aug.1.0
+output_dir: experiments/albert.xxlarge-v2.aug-mask.common.1.0
 
 do_train: True
 evaluate_during_training: True
@@ -55,8 +55,8 @@ warmup_steps: 0
 
 
 logging_steps: 5
-save_steps: 200
-eval_steps: 200
+save_steps: 500
+eval_steps: 500
 no_cuda: False
 seed: 42
 local_rank: -1
@@ -65,7 +65,9 @@ fp16_opt_level: O1
 
 # fairscale.FullyShardedDDP
 reshard_after_forward: False
-cpu_offload: False
+cpu_offload: True
+move_grads_to_cpu: True
+move_params_to_cpu: True
 
 # Temporary variables
 n_gpu:
