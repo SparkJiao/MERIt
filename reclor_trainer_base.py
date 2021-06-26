@@ -19,6 +19,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import glob
 import logging
 import os
 import random
@@ -303,8 +304,10 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
 def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"):
     dataset, features = load_and_cache_examples(cfg, tokenizer, _split=_split)
 
-    if not os.path.exists(cfg.output_dir) and cfg.local_rank in [-1, 0]:
-        os.makedirs(cfg.output_dir)
+    # if not os.path.exists(cfg.output_dir) and cfg.local_rank in [-1, 0]:
+    #     os.makedirs(cfg.output_dir)
+    if not os.path.exists(os.path.join(cfg.output_dir, prefix)):
+        os.makedirs(os.path.join(cfg.output_dir, prefix))
 
     cfg.eval_batch_size = cfg.per_gpu_eval_batch_size
     eval_sampler = SequentialSampler(dataset)  # Note that DistributedSampler samples randomly
@@ -319,16 +322,23 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
     logger.info("  Batch size = %d", cfg.eval_batch_size)
     # Seems FSDP does not need to unwrap the model for evaluating.
     model.eval()
+    pred_list = []
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
         batch = batch_to_device(batch, cfg.device)
 
         with torch.no_grad():
             outputs = model(**batch)
+            logits = outputs[1].detach().cpu()
+            _, pred = logits.max(dim=-1)
+            pred_list.extend(pred.tolist())
 
     metric_log, results = single_model_gpu.get_eval_log(reset=True)
     logger.info("****** Evaluation Results ******")
     logger.info(f"Global Steps: {prefix}")
     logger.info(metric_log)
+
+    prediction_file = os.path.join(cfg.output_dir, prefix, "eval_predictions.npy")
+    np.save(prediction_file, pred_list)
 
     return results
 
@@ -357,7 +367,7 @@ def load_and_cache_examples(cfg, tokenizer: PreTrainedTokenizer, _split="train")
 
 
 @hydra.main(config_path="conf", config_name="config")
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig):
     if cfg.local_rank == -1 or cfg.no_cuda:
         device = str(torch.device("cuda" if torch.cuda.is_available() and not cfg.no_cuda else "cpu"))
         cfg.n_gpu = torch.cuda.device_count()
@@ -442,6 +452,35 @@ def main(cfg: DictConfig) -> None:
             # Good practice: save your training arguments together with the trained model
             # torch.save(cfg, os.path.join(cfg.output_dir, 'training_args.bin'))
             OmegaConf.save(cfg, os.path.join(cfg.output_dir, "training_args.yaml"))
+
+    # Test
+    results = {}
+    if cfg.do_eval and cfg.local_rank in [-1, 0]:
+        checkpoints = [cfg.output_dir]
+        if cfg.eval_sub_path:
+            checkpoints = list(
+                os.path.dirname(c) for c in
+                sorted(glob.glob(cfg.output_dir + f"/{cfg.eval_sub_path}/" + "pytorch_model.bin", recursive=True))
+            )
+            logging.getLogger("transformers.modeling_utils").setLevel(logging.WARN)  # Reduce logging
+        logger.info(" the following checkpoints: %s", checkpoints)
+        for checkpoint in checkpoints:
+            global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
+            prefix = checkpoint.split("/")[-1] if checkpoint.find("checkpoint") != -1 else ""
+            split = "dev"
+
+            model = hydra.utils.call(cfg.model, checkpoint)
+            model.to(device)
+
+            if cfg.test_file:
+                prefix = 'test-' + prefix
+                split = "test"
+
+            result = evaluate(cfg, model, tokenizer, prefix=prefix, _split=split)
+            result = dict((k + "_{}".format(global_step), v) for k, v in result.items())
+            results.update(result)
+
+    return results
 
 
 if __name__ == "__main__":
