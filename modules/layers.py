@@ -1,4 +1,29 @@
+import torch
 from torch import Tensor
+
+
+def extract_sent_tokens(source: Tensor, sentence_index: Tensor, sent_token_mask: Tensor, sentence_ids: Tensor, sentence_ids_mask: Tensor):
+    """
+    :param source: [batch, seq_len]
+    :param sentence_index: [batch, max_sent_num, max_sent_len]
+    :param sent_token_mask: [batch, max_sent_num, max_sent_len]
+    :param sentence_ids: [batch, path_len]
+    :param sentence_ids_mask: [batch, path_len]
+    :return:
+    """
+    batch = sentence_index.size(0)
+    max_sent_len = sentence_index.size(-1)
+    path_len = sentence_ids.size(1)
+    ex_sentence_ids = sentence_ids.unsqueeze(-1).expand(-1, -1, max_sent_len)
+    ex_sentence_ids_mask = sentence_ids_mask.unsqueeze(-1).expand(-1, -1, max_sent_len)
+    # [batch, path_len, max_sent_len]
+    gathered_sent_token_ids = torch.gather(sentence_index, dim=1, index=ex_sentence_ids).reshape(batch, -1)
+    gathered_sent_token_mask = torch.gather(sent_token_mask, dim=1, index=ex_sentence_ids)
+    # [batch, path_len * max_sent_len]
+    gather_tokens = torch.gather(source, dim=1, index=gathered_sent_token_ids).reshape(batch, path_len, max_sent_len)
+    # Union mask
+    union_mask = gathered_sent_token_mask & ex_sentence_ids_mask
+    return gather_tokens, union_mask
 
 
 def get_accuracy(logits: Tensor, labels: Tensor):

@@ -20,6 +20,7 @@
 # limitations under the License.
 
 import glob
+import json
 import logging
 import os
 import random
@@ -102,10 +103,10 @@ def forward_step(model, inputs: Dict[str, torch.Tensor], cfg, scaler):
     if cfg.fp16:
         with torch.cuda.amp.autocast():
             outputs = model(**inputs)
-            loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
+            loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
     else:
         outputs = model(**inputs)
-        loss = outputs[0]  # model outputs are always tuple in pytorch-transformers (see doc)
+        loss = outputs["loss"]  # model outputs are always tuple in pytorch-transformers (see doc)
 
     if cfg.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
@@ -323,14 +324,17 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
     # Seems FSDP does not need to unwrap the model for evaluating.
     model.eval()
     pred_list = []
+    prob_list = []
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
         batch = batch_to_device(batch, cfg.device)
 
         with torch.no_grad():
             outputs = model(**batch)
-            logits = outputs[1].detach().cpu()
-            _, pred = logits.max(dim=-1)
+            # logits = outputs["logits"].detach().cpu()
+            probs = outputs["logits"].softmax(dim=-1).detach().cpu()
+            prob, pred = probs.max(dim=-1)
             pred_list.extend(pred.tolist())
+            prob_list.extend(prob.tolist())
 
     metric_log, results = single_model_gpu.get_eval_log(reset=True)
     logger.info("****** Evaluation Results ******")
@@ -339,6 +343,7 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
 
     prediction_file = os.path.join(cfg.output_dir, prefix, "eval_predictions.npy")
     np.save(prediction_file, pred_list)
+    json.dump(prob_list, open(os.path.join(cfg.output_dir, prefix, "eval_probs.json"), "w"))
 
     return results
 
@@ -383,7 +388,7 @@ def main(cfg: DictConfig):
                         datefmt='%m/%d/%Y %H:%M:%S',
                         level=logging.INFO if cfg.local_rank in [-1, 0] else logging.WARN)
     global logger
-    logger = setting_logger(cfg.output_dir)
+    logger = setting_logger(cfg.output_dir, local_rank=cfg.local_rank)
     logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
                    cfg.local_rank, device, cfg.n_gpu, bool(cfg.local_rank != -1), cfg.fp16)
 
