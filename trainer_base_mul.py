@@ -170,7 +170,16 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
             {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
              'weight_decay': 0.0}
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
+        if "optimizer" in cfg and cfg.optimizer == 'lamb':
+            from apex.optimizers.fused_lamb import FusedLAMB
+            optimizer = FusedLAMB(optimizer_grouped_parameters,
+                                  lr=cfg.learning_rate,
+                                  betas=eval(cfg.adam_betas),
+                                  eps=cfg.adam_epsilon,
+                                  use_nvlamb=(cfg.use_nvlamb if "use_nvlamb" in cfg else False),
+                                  max_grad_norm=cfg.max_grad_norm)
+        else:
+            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
 
     if cfg.fp16:
@@ -205,7 +214,16 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
             {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': cfg.weight_decay},
             {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon)
+        if "optimizer" in cfg and cfg.optimizer == 'lamb':
+            from apex.optimizers.fused_lamb import FusedLAMB
+            optimizer = FusedLAMB(optimizer_grouped_parameters,
+                                  lr=cfg.learning_rate,
+                                  betas=eval(cfg.adam_betas),
+                                  eps=cfg.adam_epsilon,
+                                  use_nvlamb=(cfg.use_nvlamb if "use_nvlamb" in cfg else False),
+                                  max_grad_norm=cfg.max_grad_norm)
+        else:
+            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon)
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
 
     logger.info(optimizer)
@@ -271,7 +289,7 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                     if cfg.fp16:
                         scaler.unscale_(optimizer)
 
-                    if cfg.max_grad_norm:
+                    if cfg.max_grad_norm and not ("optimizer" in cfg and cfg.optimizer == "lamb"):
                         if hasattr(optimizer, "clip_grad_norm"):
                             optimizer.clip_grad_norm(cfg.max_grad_norm)
                         elif hasattr(model, "clip_grad_norm_"):
