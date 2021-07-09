@@ -14,9 +14,13 @@ def setting_logger(log_file: str, local_rank: int = -1):
 
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                         datefmt='%m/%d/%Y %H:%M:%S',
-                        level=logging.INFO if local_rank in [-1, 0] else logging.WARN)
+                        level=logging.INFO if local_rank in [-1, 0] else logging.WARNING)
+
+    global _root_name
+    if local_rank != -1:
+        _root_name = _root_name + '.' + str(local_rank)
     logger = logging.getLogger(_root_name)
-    # logger.setLevel(logging.INFO)
+    logger.setLevel(logging.INFO if local_rank in [-1, 0] else logging.WARNING)
 
     rf_handler = logging.StreamHandler(sys.stderr)
     rf_handler.setLevel(logging.INFO)

@@ -2,13 +2,17 @@ hydra:
   run:
     dir: ./
 
-#train_file: reclor_data/train.json
+train_file: reclor_data/train.json
 #train_file: reclor_data/train.mask-aug.json
 #train_file: reclor_data/train.mask-aug.common.json
 #train_file: reclor_data/train.mask-aug.common-all.json
-train_file: reclor_data/train.mask-aug.common.all_np.json
+#train_file: reclor_data/train.mask-aug.common.all_np.json
+#train_file: reclor_data/train.replace.v1.0.json
+#train_file: reclor_data/train.replace.v1.1.json  # ordered
 dev_file: reclor_data/val.json
-test_file: reclor_data/test.json
+#test_file: reclor_data/test.json
+test_file: reclor_data/train.enum.json
+#test_file:
 
 # Model
 model:
@@ -17,22 +21,25 @@ model:
 
 # Data loading
 read_tensor:
-  _target_: datasets.reclor_sentence_mask_aug.convert_examples_into_features
-  add_mlm: True
+#  _target_: datasets.reclor_sentence_mask_aug.convert_examples_into_features
+  _target_: datasets.reclor_sentence.convert_examples_into_features
+#  add_mlm: True
   max_seq_length: 256
   num_workers: 2
 
 # Data collator
 collator:
-#  _target_: datasets.data_collators.ReClorSentenceCollator
-  _target_: datasets.data_collators.ReClorSentenceMLMCollator
+  _target_: datasets.data_collators.ReClorSentenceCollator
+#  _target_: datasets.data_collators.ReClorSentenceMLMCollator
 
 # Dataloader
 num_workers: 4
 prefetch_factor: 2
 
 
-model_name_or_path: pretrained-models/roberta-large
+#model_name_or_path: pretrained-models/roberta-large
+model_name_or_path: pretrained-models/roberta-large-mnli
+#model_name_or_path: pretrained-models/roberta-large-snli_mnli_fever_anli_R1_R2_R3-nli
 pretrain:
 
 #output_dir: experiments/roberta.base.aug-mask.common-all.1.0
@@ -43,17 +50,24 @@ pretrain:
 #output_dir: experiments/roberta.large.aug-mask.common.all_np.1.1
 #output_dir: experiments/roberta.large.aug-mask.common.all_np.1.2
 #output_dir: experiments/roberta.large.aug-mask.common.all_np.mlm.1.0
-output_dir: experiments/roberta.large.aug-mask.common.all_np.mlm.1.2
+#output_dir: experiments/roberta.large.aug-mask.common.all_np.mlm.1.2
 #output_dir: experiments/roberta.large.2.0
+output_dir: experiments/roberta.large.mnli.2.0
+#output_dir: experiments/roberta.large.anli.2.0
+#output_dir: experiments/roberta.large.replace.v1.1
 
-do_train: True
+do_train: False
 evaluate_during_training: True
+
+# Evaluation
+do_eval: True
+eval_sub_path: "checkpoint-1200"
 
 # Training hyper-parameters
 #per_gpu_train_batch_size: 8
 #per_gpu_eval_batch_size: 8
 per_gpu_train_batch_size: 1
-per_gpu_eval_batch_size: 1
+per_gpu_eval_batch_size: 8
 learning_rate: 1e-5
 #learning_rate: 2e-5
 gradient_accumulation_steps: 24
@@ -79,6 +93,8 @@ fp16_opt_level: O1
 # fairscale.FullyShardedDDP
 reshard_after_forward: False
 cpu_offload: False
+move_grads_to_cpu: False
+move_params_to_cpu: False
 
 # Temporary variables
 n_gpu:

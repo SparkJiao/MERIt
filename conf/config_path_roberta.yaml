@@ -1,0 +1,93 @@
+hydra:
+  run:
+    dir: ./
+
+train_file: reclor_data/train.path.v1.0.json
+dev_file: reclor_data/val.json
+test_file: reclor_data/test.json
+
+# Model
+model:
+  _target_: models.roberta_sent_att_sup.RobertaSentForMultipleChoice.from_pretrained
+  sup_start_layer_id: 10
+  average: False
+
+# Data loading
+read_tensor:
+  _target_: datasets.reclor_sentence_path.convert_examples_into_features
+  max_seq_length: 256
+  num_workers: 2
+  include_q: True
+  include_op: True
+
+# Data collator
+collator:
+  _target_: datasets.collators.ReClorSentencePathCollator
+
+# Dataloader
+num_workers: 8
+prefetch_factor: 2
+
+
+#model_name_or_path: pretrained-models/roberta-large
+model_name_or_path: pretrained-models/roberta-large-mnli
+#model_name_or_path: pretrained-models/roberta-large-snli_mnli_fever_anli_R1_R2_R3-nli
+pretrain:
+
+#output_dir: experiments/roberta.large.2.0
+#output_dir: experiments/roberta.large.mnli.2.0
+#output_dir: experiments/roberta.large.anli.2.0
+#output_dir: experiments/roberta.large.mnli.att_sup.1.0
+#output_dir: experiments/roberta.large.mnli.att_sup.1.1  # sum
+#output_dir: experiments/roberta.large.mnli.att_sup.1.2  # Remove q and op from rev_path
+#output_dir: experiments/roberta.large.mnli.att_sup.1.3  # Remove q and op from rev_path && average loss.
+
+# Tesla T4
+#output_dir: experiments/roberta.large.mnli.att_sup.1.4.TeslaT4  # sum & batch size == 16
+#output_dir: experiments/roberta.large.mnli.att_sup.1.5.TeslaT4  # sum & remove q and op & lower learning rate
+
+# RTX 2080Ti
+output_dir: experiments/roberta.large.mnli.att_sup.1.1.2080Ti  # sum
+
+do_train: False
+evaluate_during_training: True
+
+# Evaluation
+do_eval: True
+eval_sub_path: "checkpoint-1800"
+
+# Training hyper-parameters
+per_gpu_train_batch_size: 1
+per_gpu_eval_batch_size: 1
+learning_rate: 1e-5
+gradient_accumulation_steps: 24
+weight_decay: 0.01
+adam_epsilon: 1e-6
+adam_betas: "(0.9, 0.98)"
+max_grad_norm: 0.0
+num_train_epochs: 10
+max_steps: 0
+warmup_proportion: 0.1
+warmup_steps: 0
+
+
+logging_steps: 5
+save_steps: 200
+eval_steps: 200
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O1
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: False
+cpu_offload: False
+move_grads_to_cpu: False
+move_params_to_cpu: False
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:

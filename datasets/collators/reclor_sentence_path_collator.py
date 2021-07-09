@@ -81,3 +81,22 @@ class ReClorSentencePathCollator:
             outputs["token_type_ids"] = torch.stack(token_type_ids, dim=0)
 
         return outputs
+
+
+class ReClorSentencePathCollatorPlus(ReClorSentencePathCollator):
+
+    def __call__(self, batch: List[Tuple[Tensor, ...]]) -> Dict[str, Tensor]:
+        outputs = super().__call__(batch)
+
+        sent_num = outputs["sentence_mask"].sum(dim=2)
+
+        assert (sent_num <= 2).sum().item() == 0
+
+        op_sent_index = sent_num - 1
+        q_sent_index = sent_num - 2
+        q_op_sent_index = torch.stack([q_sent_index, op_sent_index], dim=-1)
+        assert q_op_sent_index.size() == sent_num.size() + (2,), q_op_sent_index.size()
+
+        outputs["q_op_sent_index"] = q_op_sent_index
+
+        return outputs

@@ -1,0 +1,76 @@
+hydra:
+  run:
+    dir: ./
+
+train_file: /home/share/jiaofangkai/wiki_erica_path/train_distant_[1-9].roberta_path.json
+dev_file: /home/share/jiaofangkai/wiki_erica_path/train_distant_0.roberta_path.json
+test_file:
+
+# Model
+model:
+  _target_: models.roberta_baseline.RobertaForMultipleChoice.from_pretrained
+
+# Data loading
+read_tensor:
+  _target_: datasets.wiki_entity_path.convert_examples_into_features
+  max_neg_num: 3
+  max_seq_length: 512
+extended_vocab:
+  _target_: datasets.wiki_entity_path.get_num_extended_tokens
+
+# Data collator
+collator:
+  _target_: datasets.collators.BaseDictCollator
+
+# Dataloader
+num_workers: 4
+prefetch_factor: 2
+
+
+#model_name_or_path: pretrained-models/roberta-large-mnli
+model_name_or_path: pretrained-models/roberta-large
+pretrain:
+
+output_dir: experiments/roberta.large.wiki_erica_path.1.0.T4
+
+do_train: True
+evaluate_during_training: True
+
+do_eval: False
+eval_sub_path: "checkpoint-1400"
+
+# Training hyper-parameters
+per_gpu_train_batch_size: 1
+per_gpu_eval_batch_size: 1
+learning_rate: 5e-4
+gradient_accumulation_steps: 1024
+weight_decay: 0.01
+adam_epsilon: 1e-6
+adam_betas: "(0.9, 0.98)"
+max_grad_norm: 0.0
+num_train_epochs: 3
+max_steps: 0
+warmup_proportion: 0.1
+warmup_steps: 0
+
+
+logging_steps: 1
+save_steps: 100
+eval_steps: 100
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O1
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: False
+cpu_offload: False
+move_grads_to_cpu: False
+move_params_to_cpu: False
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:

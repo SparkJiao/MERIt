@@ -17,33 +17,44 @@ model:
 # Data loading
 read_tensor:
   _target_: datasets.reclor_sentence.convert_examples_into_features
-#  max_seq_length: 256
-  max_seq_length: 220
+  max_seq_length: 256
+#  max_seq_length: 220
   num_workers: 2
 
 # Data collator
 collator:
-  _target_: datasets.data_collators.ReClorSentenceCollator
+  _target_: datasets.collators.ReClorSentenceCollator
 
 # Dataloader
 num_workers: 4
 prefetch_factor: 2
 
 
-model_name_or_path: pretrained-models/albert-xxlarge-v2
-pretrain:
+#model_name_or_path: pretrained-models/albert-xxlarge-v2
+#model_name_or_path: pretrained-models/roberta-large-mnli
+model_name_or_path: pretrained-models/roberta-base
+pretrain: "pretrained-models/ERICA_pretrained/pre-trained model parameters/roberta_ep_rp.bin"
 
 #output_dir: experiments/roberta.base.2.0
-output_dir: experiments/albert.xxlarge-v2.2.0
+output_dir: experiments/roberta.base.erica.ep.rp.1.0
 
-do_train: True
+#output_dir: experiments/albert.xxlarge-v2.2.0
+#output_dir: experiments/roberta.large.mnli.2.0.titan
+
+#output_dir: experiments/roberta.large.mnli.2.1.TeslaT4
+#output_dir: experiments/roberta.large.mnli.2.2.TeslaT4
+
+do_train: False
 evaluate_during_training: True
 
+do_eval: True
+eval_sub_path: "checkpoint-1400"
+
 # Training hyper-parameters
-per_gpu_train_batch_size: 1
-per_gpu_eval_batch_size: 1
+per_gpu_train_batch_size: 8
+per_gpu_eval_batch_size: 8
 learning_rate: 1e-5
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 3
 weight_decay: 0.01
 adam_epsilon: 1e-6
 adam_betas: "(0.9, 0.98)"
@@ -66,6 +77,8 @@ fp16_opt_level: O1
 # fairscale.FullyShardedDDP
 reshard_after_forward: False
 cpu_offload: False
+move_grads_to_cpu: False
+move_params_to_cpu: False
 
 # Temporary variables
 n_gpu:
