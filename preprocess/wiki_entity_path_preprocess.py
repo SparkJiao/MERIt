@@ -126,10 +126,6 @@ def construct_sample(sample):
 
     relations = {(item['h'], item['t']): item['r'] for item in relations}
 
-    # sent2ent = defaultdict(list)
-    # for ent_id, ent in enumerate(entities):
-    #     sent2ent[ent['sent_id']].append(ent_id)
-
     examples = []
     for (h, t) in relations.keys():
         h_sent_cnt = len(entities[h])

@@ -2,8 +2,12 @@ hydra:
   run:
     dir: ./
 
-train_file: /home/share/jiaofangkai/wiki_erica_path/train_distant_[1-9].roberta_path.json
-dev_file: /home/share/jiaofangkai/wiki_erica_path/train_distant_0.roberta_path.json
+#train_file: /home/share/jiaofangkai/wiki_erica_path/train_distant_[1-9].roberta_path.json
+#dev_file: /home/share/jiaofangkai/wiki_erica_path/train_distant_dev.roberta_path.json
+#train_file: /home/share/jiaofangkai/wiki_erica_path/v3.0/train_distant.all.path_v3.train.json
+#dev_file: /home/share/jiaofangkai/wiki_erica_path/v3.0/train_distant.all.path_v3.dev.json
+train_file: /home/share/jiaofangkai/wiki_erica_path/v4.0/train_distant.all.path_v4.train.json
+dev_file: /home/share/jiaofangkai/wiki_erica_path/v4.0/train_distant.all.path_v4.dev.json
 test_file:
 
 # Model
@@ -12,11 +16,13 @@ model:
 
 # Data loading
 read_tensor:
-  _target_: datasets.wiki_entity_path.convert_examples_into_features
+  _target_: datasets.wiki_entity_path_v4.convert_examples_into_features
   max_neg_num: 3
-  max_seq_length: 512
+  aug_num: 3
+  max_seq_length: 384
+
 extended_vocab:
-  _target_: datasets.wiki_entity_path.get_num_extended_tokens
+#  _target_: datasets.wiki_entity_path.get_num_extended_tokens
 
 # Data collator
 collator:
@@ -28,10 +34,20 @@ prefetch_factor: 2
 
 
 #model_name_or_path: pretrained-models/roberta-large-mnli
-model_name_or_path: pretrained-models/roberta-large
+#model_name_or_path: pretrained-models/roberta-large
+model_name_or_path: pretrained-models/roberta-base
 pretrain:
 
-output_dir: experiments/roberta.large.wiki_erica_path.1.0.T4
+#output_dir: experiments/roberta.large.wiki_erica_path.1.0.T4
+#output_dir: experiments/roberta.base.wiki_erica_path.1.0.T4
+#output_dir: experiments/roberta.base.wiki_erica_path.1.1.T4
+#output_dir: experiments/roberta.base.wiki_erica_path_v3.1.0.2080Ti
+#output_dir: experiments/roberta.base.wiki_erica_path_v3.1.0.2080Ti.lower_test
+#output_dir: experiments/roberta.base.wiki_erica_path_v3.1.0.2080Ti.fix_case
+#output_dir: experiments/roberta.base.wiki_erica_path_v3.1.1.2080Ti.fix_case
+#output_dir: experiments/roberta.base.wiki_erica_path_v3.1.0.2080Ti.fix_case.fix_rep
+#output_dir: experiments/roberta.base.wiki_erica_path_v3.1.1.0.2080Ti
+output_dir: experiments/roberta.base.wiki_erica_path_v4_0.1.0.2080Ti
 
 do_train: True
 evaluate_during_training: True
@@ -40,23 +56,26 @@ do_eval: False
 eval_sub_path: "checkpoint-1400"
 
 # Training hyper-parameters
-per_gpu_train_batch_size: 1
-per_gpu_eval_batch_size: 1
+per_gpu_train_batch_size: 4
+per_gpu_eval_batch_size: 4
 learning_rate: 5e-4
-gradient_accumulation_steps: 1024
+gradient_accumulation_steps: 128
 weight_decay: 0.01
 adam_epsilon: 1e-6
 adam_betas: "(0.9, 0.98)"
-max_grad_norm: 0.0
-num_train_epochs: 3
+max_grad_norm: 5.0
+num_train_epochs: 10
 max_steps: 0
 warmup_proportion: 0.1
 warmup_steps: 0
 
+# Optimizer
+optimizer: lamb
+use_nvlamb: True
 
 logging_steps: 1
-save_steps: 100
-eval_steps: 100
+save_steps: 50
+eval_steps: 50
 no_cuda: False
 seed: 42
 local_rank: -1
