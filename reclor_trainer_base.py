@@ -417,7 +417,7 @@ def main(cfg: DictConfig):
         model.to(cfg.device)
 
     # logger.info("Training/evaluation parameters %s", OmegaConf.to_yaml(cfg))
-    if cfg.local_rank in [-1, 0]:
+    if cfg.local_rank in [-1, 0] and cfg.do_train:
         if not os.path.exists(cfg.output_dir):
             os.makedirs(cfg.output_dir)
         OmegaConf.save(cfg, os.path.join(cfg.output_dir, "training_config.yaml"))

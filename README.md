@@ -1,5 +1,15 @@
 # ReClor_challenge
 
+
+## Experimental Results
+
+|   base-model |       Pre-train       | bs/gpu * gpu_num | lr   | epoch | Val Acc. | Test Acc. | path |
+| :----------: | --------------------- | ---------------- | ---- | ----- | -------- | --------- | ---- |
+| RoBERTa-base |  ---                  | 24 * 1           | 2e-5 |   10  |  53.0    | 48.5*     | roberta.base.2.0 |
+|              |  ERICA                | 24 * 1           | 1e-5 |   10  |  54.8    | 49.3      | roberta.base.erica.ep.rp.1.0 |
+|              |  wiki-path-v4.0 + MLM | 24 * 1           | 2e-5 |   10  |  56.2    | 51.0      | roberta.base.wiki_erica_path_v4_0.2.0_cp500.1.0.2080Ti |
+
+
 ## Progress
 
 ### 2021/3/12
