@@ -5,14 +5,17 @@ from tqdm import tqdm
 from collections import defaultdict
 
 import torch
+from multiprocessing import Pool
 from torch.utils.data import Dataset
 from torch.utils.data.dataset import T_co
-from transformers import PreTrainedTokenizer
+from functools import partial
+from transformers import PreTrainedTokenizer, RobertaTokenizer
 from transformers.tokenization_utils import PaddingStrategy, TruncationStrategy
 
 from general_util.logger import get_child_logger
 
 logger = get_child_logger("Wiki.Entity.Path.V4")
+_tokenizer: PreTrainedTokenizer
 
 
 def replace_ent(candidate, h_ent_id, h_ent_str, t_ent_id, t_ent_str):
@@ -114,6 +117,8 @@ def read_examples(file_path: str, max_neg_num: int = 3, aug_num: int = 10):
     examples = []
     for item_id, item in enumerate(tqdm(data, desc='Reading examples', total=len(data))):
         selected_sentences = item["selected_sentences"]
+        if len(selected_sentences) == 0:
+            continue
         context = " ".join([" ".join(s["sent"]) for s_id, s in selected_sentences.items()])
 
         neg_candidates = [x for x in item["rest_sentences"].values() if len(x["ent"]) > 1]
@@ -219,8 +224,22 @@ def read_examples(file_path: str, max_neg_num: int = 3, aug_num: int = 10):
     return examples
 
 
+def _initializer(tokenizer: PreTrainedTokenizer):
+    global _tokenizer
+    _tokenizer = tokenizer
+
+
+def _convert_example_into_features(example, max_seq_length: int = 512):
+    context = example[0]
+    option = example[1]
+
+    tokenizer_outputs = _tokenizer(context, text_pair=option, truncation=TruncationStrategy.LONGEST_FIRST,
+                                   padding=PaddingStrategy.MAX_LENGTH, max_length=max_seq_length)
+    return tokenizer_outputs
+
+
 def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenizer, max_neg_num: int = 3, aug_num: int = 10,
-                                   max_seq_length: int = 512):
+                                   max_seq_length: int = 512, num_workers: int = 48):
     tokenizer_name = tokenizer.__class__.__name__
     tokenizer_name = tokenizer_name.replace('TokenizerFast', '')
     tokenizer_name = tokenizer_name.replace('Tokenizer', '').lower()
@@ -243,17 +262,48 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
         options.extend([example["positive"]] + example["negative"])
     assert len(ex_sentences) == len(options), (len(ex_sentences), len(options))
 
-    logger.info("Tokenization...")
+    # logger.info("Tokenization...")
 
-    tokenizer_outputs = tokenizer(ex_sentences, text_pair=options, truncation=TruncationStrategy.ONLY_FIRST, return_tensors="pt",
-                                  max_length=max_seq_length, padding=PaddingStrategy.MAX_LENGTH)
+    with Pool(num_workers, initializer=_initializer, initargs=(tokenizer,)) as p:
+        _annotate = partial(_convert_example_into_features, max_seq_length=max_seq_length)
+        _results = list(tqdm(
+            p.imap(_annotate, zip(ex_sentences, options), chunksize=32),
+            total=len(ex_sentences),
+            desc='Tokenization'
+        ))
+    # ex_sentences = ex_sentences[1400000:]
+    # options = options[1400000:]
+    # _initializer(tokenizer)
+    # _results = []
+    # for context, option in tqdm(zip(ex_sentences, options), total=len(ex_sentences)):
+    #     try:
+    #         _results.append(_convert_example_into_features((context, option), max_seq_length))
+    #     except:
+    #         print(context)
+    #         print(option)
+    #         exit(0)
+    #
+    # tokenizer_outputs = tokenizer(ex_sentences, text_pair=options, truncation=TruncationStrategy.ONLY_FIRST, return_tensors="pt",
+    #                               max_length=max_seq_length, padding=PaddingStrategy.MAX_LENGTH)
+    # for ex_sentence, option in tqdm(zip(ex_sentences, options)):
+    #     try:
+    #         tokenizer(ex_sentence, text_pair=option, truncation=TruncationStrategy.ONLY_FIRST, return_tensors="pt", max_length=max_seq_length,
+    #                   padding=PaddingStrategy.MAX_LENGTH)
+    #     except:
+    #         print(len(ex_sentence), len(option), ex_sentence, option)
+    #         exit(0)
 
-    input_ids = tokenizer_outputs["input_ids"].reshape(data_num, max_neg_num + 1, -1)
-    attention_mask = tokenizer_outputs["attention_mask"].reshape(data_num, max_neg_num + 1, -1)
+    input_ids = torch.tensor([o["input_ids"] for o in _results], dtype=torch.long).reshape(data_num, max_neg_num + 1, -1)
+    attention_mask = torch.tensor([o["attention_mask"] for o in _results], dtype=torch.long).reshape(data_num, max_neg_num + 1, -1)
+
+    # input_ids = tokenizer_outputs["input_ids"].reshape(data_num, max_neg_num + 1, -1)
+    # attention_mask = tokenizer_outputs["attention_mask"].reshape(data_num, max_neg_num + 1, -1)
     tensors = (input_ids, attention_mask,)
 
-    if "token_type_ids" in tokenizer_outputs:
-        token_type_ids = tokenizer_outputs["token_type_ids"].reshape(data_num, max_neg_num + 1, -1)
+    # if "token_type_ids" in tokenizer_outputs:
+    if "token_type_ids" in _results[0]:
+        token_type_ids = torch.tensor([o["token_type_ids"] for o in _results], dtype=torch.long)
+        # token_type_ids = tokenizer_outputs["token_type_ids"].reshape(data_num, max_neg_num + 1, -1)
         tensors = tensors + (token_type_ids,)
 
     labels = torch.zeros(data_num, dtype=torch.long)
