@@ -3,6 +3,7 @@ from typing import Tuple, List, Dict, Optional
 import torch
 from torch import Tensor
 from transformers import AutoTokenizer, RobertaTokenizer
+from torch.utils.data.dataset import Dataset, T_co, TensorDataset
 
 
 class BaseDictCollator:
@@ -14,8 +15,17 @@ class BaseDictCollator:
     def __call__(self, batch: List[Tuple[Tensor, ...]]) -> Dict[str, Tensor]:
         if len(batch[0]) == 4:
             input_ids, attention_mask, token_type_ids, labels = list(zip(*batch))
+            mlm_input_ids = None
+            mlm_attention_mask = None
         elif len(batch[0]) == 3:
             input_ids, attention_mask, labels = list(zip(*batch))
+            token_type_ids = None
+            mlm_input_ids = None
+            mlm_attention_mask = None
+        elif len(batch[0]) == 6:
+            input_ids, attention_mask, token_type_ids, labels, mlm_input_ids, mlm_attention_mask = list(zip(*batch))
+        elif len(batch[0]) == 5:
+            input_ids, attention_mask, labels, mlm_input_ids, mlm_attention_mask = list(zip(*batch))
             token_type_ids = None
         else:
             raise RuntimeError()
@@ -33,16 +43,25 @@ class BaseDictCollator:
             outputs["token_type_ids"] = torch.stack(token_type_ids, dim=0)
 
         if self.add_mlm_labels:
-            mlm_input_ids = input_ids[:, 0].clone()
-            mlm_input_ids, mlm_labels = self.mask_tokens(mlm_input_ids)
+            if mlm_input_ids is None:
+                mlm_input_ids = input_ids[:, 0].clone()
+                mlm_input_ids, mlm_labels = self.mask_tokens(mlm_input_ids)
 
-            outputs["mlm_input_ids"] = mlm_input_ids
-            outputs["mlm_labels"] = mlm_labels
+                outputs["mlm_input_ids"] = mlm_input_ids
+                outputs["mlm_labels"] = mlm_labels
+            else:
+                mlm_input_ids = torch.stack(mlm_input_ids, dim=0)
+                mlm_attention_mask = torch.stack(mlm_attention_mask, dim=0)
+
+                mlm_input_ids, mlm_labels = self.mask_tokens(mlm_input_ids)
+                outputs["mlm_input_ids"] = mlm_input_ids
+                outputs["mlm_attention_mask"] = mlm_attention_mask
+                outputs["mlm_labels"] = mlm_labels
 
         return outputs
 
     def mask_tokens(
-        self, inputs: torch.Tensor, special_tokens_mask: Optional[torch.Tensor] = None
+            self, inputs: torch.Tensor, special_tokens_mask: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
@@ -75,3 +94,22 @@ class BaseDictCollator:
 
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
         return inputs, labels
+
+
+class UnalignedTensorDataset(Dataset):
+
+    def __init__(self, tensor_groups: Tuple[Tuple[Tensor, ...], ...], id_for_len: int):
+        self.length = tensor_groups[id_for_len][0].size(0)
+        self.tensors = []
+        for _tensors in tensor_groups:
+            assert all(_tensors[0].size(0) == _tensor.size(0) for _tensor in _tensors), "Size mismatch between tensors"
+            self.tensors.extend(_tensors)
+
+    def __getitem__(self, index) -> T_co:
+        res = []
+        for _tensor in self.tensors:
+            res.append(_tensor[index % _tensor.size(0)])
+        return res
+
+    def __len__(self):
+        return self.length

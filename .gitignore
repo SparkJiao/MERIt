@@ -130,3 +130,7 @@ dmypy.json
 
 # Pycharm
 .idea
+
+# Experimental files
+log_dir/*
+experiments/*

@@ -144,6 +144,7 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
             token_type_ids: Tensor = None,
             labels: Tensor = None,
             mlm_input_ids: Tensor = None,
+            mlm_attention_mask: Tensor = None,
             mlm_labels: Tensor = None,
             output_attentions=None,
             output_hidden_states=None,
@@ -184,7 +185,8 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
             loss = loss_fct(reshaped_logits, labels)
 
             if mlm_labels is not None:
-                mlm_attention_mask = attention_mask.reshape(reshaped_logits.size(0), num_choices, -1)[:, 0]
+                if mlm_attention_mask is None:
+                    mlm_attention_mask = attention_mask.reshape(reshaped_logits.size(0), num_choices, -1)[:, 0]
 
                 mlm_outputs = self.roberta(
                     mlm_input_ids,

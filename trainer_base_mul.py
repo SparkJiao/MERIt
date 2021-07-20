@@ -144,6 +144,9 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
         num_examples += len(_sub_train_dataset)
         del _sub_train_dataset
 
+    if "do_preprocess" in cfg and cfg.do_preprocess:
+        exit(0)
+
     if cfg.local_rank != -1:
         cum_steps = int(num_examples * 1.0 / cfg.train_batch_size / dist.get_world_size())
     else:
