@@ -39,6 +39,9 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, Tens
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 from transformers import (AdamW, get_linear_schedule_with_warmup, AutoTokenizer, PreTrainedTokenizer)
+from transformers.deepspeed import HfDeepSpeedConfig
+
+import deepspeed
 
 from general_util.logger import setting_logger
 
@@ -130,6 +133,27 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
     else:
         tb_writer = None
 
+    no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
+    if cfg.deepspeed_transformer_kernel:
+        no_decay = no_decay + [
+            'attn_nw', 'attn_nb', 'norm_w', 'norm_b', 'attn_qkvb', 'attn_ob',
+            'inter_b', 'output_b'
+        ]
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+         'weight_decay': cfg.weight_decay},
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+         'weight_decay': 0.0}
+    ]
+
+    model, optimizer, _, _ = deepspeed.initialize(model=model, model_parameters=optimizer_grouped_parameters,
+                                                  config=cfg.deepspeed_config)
+
+    logger.info(optimizer)
+
+    cfg.per_gpu_train_batch_size = model.train_micro_batch_size_per_gpu()
+    cfg.gradient_accumulation_steps = model.gradient_accumulation_steps()
+
     cfg.train_batch_size = cfg.per_gpu_train_batch_size * max(1, cfg.n_gpu)
 
     num_examples = 0
@@ -143,9 +167,6 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
         _sub_train_dataset, _ = load_and_cache_examples(cfg, tokenizer, _split="train", _file=_train_file)
         num_examples += len(_sub_train_dataset)
         del _sub_train_dataset
-
-    if "do_preprocess" in cfg and cfg.do_preprocess:
-        exit(0)
 
     if cfg.local_rank != -1:
         cum_steps = int(num_examples * 1.0 / cfg.train_batch_size / dist.get_world_size())
@@ -161,75 +182,7 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
     else:
         t_total = cum_steps // cfg.gradient_accumulation_steps * cfg.num_train_epochs
 
-    num_warmup_steps = int(t_total * cfg.warmup_proportion) if cfg.warmup_proportion else cfg.warmup_steps
-
-    optimizer = scheduler = None
-    # Prepare optimizer and schedule (linear warmup and decay)
-    if cfg.local_rank == -1:
-        no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-             'weight_decay': cfg.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
-             'weight_decay': 0.0}
-        ]
-        if "optimizer" in cfg and cfg.optimizer == 'lamb':
-            from apex.optimizers.fused_lamb import FusedLAMB
-            optimizer = FusedLAMB(optimizer_grouped_parameters,
-                                  lr=cfg.learning_rate,
-                                  betas=eval(cfg.adam_betas),
-                                  eps=cfg.adam_epsilon,
-                                  use_nvlamb=(cfg.use_nvlamb if "use_nvlamb" in cfg else False),
-                                  max_grad_norm=cfg.max_grad_norm)
-        else:
-            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
-
-    if cfg.fp16:
-        if cfg.local_rank != -1:
-            scaler = ShardedGradScaler()
-        else:
-            from torch.cuda.amp.grad_scaler import GradScaler
-
-            scaler = GradScaler()
-    else:
-        scaler = None
-
-    # multi-gpu training (should be after apex fp16 initialization)
-    model_single_gpu = model
-    if cfg.n_gpu > 1:
-        model = torch.nn.DataParallel(model_single_gpu)
-
-    # Distributed training (should be after apex fp16 initialization)
-    if cfg.local_rank != -1:
-        model = auto_wrap(model)
-        model = FullyShardedDDP(model,
-                                mixed_precision=cfg.fp16,
-                                reshard_after_forward=cfg.reshard_after_forward,
-                                cpu_offload=cfg.cpu_offload,
-                                move_grads_to_cpu=cfg.move_grads_to_cpu)
-        # move_params_to_cpu=cfg.move_params_to_cpu).to(cfg.device)
-        if not cfg.cpu_offload:
-            model = model.to(cfg.device)
-
-        no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': cfg.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-        if "optimizer" in cfg and cfg.optimizer == 'lamb':
-            from apex.optimizers.fused_lamb import FusedLAMB
-            optimizer = FusedLAMB(optimizer_grouped_parameters,
-                                  lr=cfg.learning_rate,
-                                  betas=eval(cfg.adam_betas),
-                                  eps=cfg.adam_epsilon,
-                                  use_nvlamb=(cfg.use_nvlamb if "use_nvlamb" in cfg else False),
-                                  max_grad_norm=cfg.max_grad_norm)
-        else:
-            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon)
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
-
-    logger.info(optimizer)
+    # num_warmup_steps = int(t_total * cfg.warmup_proportion) if cfg.warmup_proportion else cfg.warmup_steps
 
     # Train!
     logger.info("***** Running training *****")
@@ -240,14 +193,14 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                 cfg.train_batch_size * cfg.gradient_accumulation_steps * (dist.get_world_size() if cfg.local_rank != -1 else 1))
     logger.info("  Gradient Accumulation steps = %d", cfg.gradient_accumulation_steps)
     logger.info("  Total optimization steps = %d", t_total)
-    logger.info("  Warmup steps = %d", num_warmup_steps)
+    # logger.info("  Warmup steps = %d", num_warmup_steps)
 
     if continue_from_global_step > 0:
         logger.info("Fast forwarding to global step %d to resume training from latest checkpoint...", continue_from_global_step)
 
     global_step = 0
     tr_loss, logging_loss = 0.0, 0.0
-    model.zero_grad()
+    # model.zero_grad()
     train_iterator = trange(int(cfg.num_train_epochs), desc="Epoch", disable=cfg.local_rank not in [-1, 0])
     set_seed(cfg)  # Added here for reproducibility (even between python 2 and 3)
 
@@ -273,46 +226,32 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                 # to the state of that checkpoint.
                 if global_step < continue_from_global_step:
                     if (step + 1) % cfg.gradient_accumulation_steps == 0:
-                        scheduler.step()  # Update learning rate schedule
+                        # scheduler.step()  # Update learning rate schedule
                         global_step += 1
                     continue
 
                 model.train()
                 batch = batch_to_device(batch, cfg.device)
 
-                if (step + 1) % cfg.gradient_accumulation_steps != 0 and cfg.local_rank != -1:
-                    # Avoid unnecessary DDP synchronization since there will be no backward pass on this example.
-                    with model.no_sync():
-                        loss = forward_step(model, batch, cfg, scaler)
-                else:
-                    loss = forward_step(model, batch, cfg, scaler)
+                outputs = model(**batch)
+                loss = outputs["loss"]
+
+                if cfg.n_gpu > 1:
+                    loss = loss.mean()
+
+                if cfg.gradient_accumulation_steps > 1:
+                    loss = loss / cfg.gradient_accumulation_steps
+
+                model.backward(loss)
 
                 tr_loss += loss
                 if (step + 1) % cfg.gradient_accumulation_steps == 0:
-                    if cfg.fp16:
-                        scaler.unscale_(optimizer)
-
-                    if cfg.max_grad_norm and not ("optimizer" in cfg and cfg.optimizer == "lamb"):
-                        if hasattr(optimizer, "clip_grad_norm"):
-                            optimizer.clip_grad_norm(cfg.max_grad_norm)
-                        elif hasattr(model, "clip_grad_norm_"):
-                            model.clip_grad_norm_(cfg.max_grad_norm)
-                        else:
-                            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
-
-                    if cfg.fp16:
-                        scaler.step(optimizer)
-                        scaler.update()
-                    else:
-                        optimizer.step()
-
-                    scheduler.step()  # Update learning rate schedule
-                    model.zero_grad()
                     global_step += 1
 
                     # Log metrics
                     if cfg.local_rank in [-1, 0] and cfg.logging_steps > 0 and global_step % cfg.logging_steps == 0:
-                        tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
+                        # tb_writer.add_scalar('lr', scheduler.get_lr()[0], global_step)
+                        tb_writer.add_scalar('lr', model.get_lr()[0], global_step)
                         tb_writer.add_scalar('loss', (tr_loss - logging_loss) / cfg.logging_steps, global_step)
                         logging_loss = tr_loss
 
@@ -321,13 +260,7 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                         output_dir = os.path.join(cfg.output_dir, 'checkpoint-{}'.format(global_step))
                         if cfg.local_rank in [-1, 0] and not os.path.exists(output_dir):
                             os.makedirs(output_dir)
-                        # save_model(model, cfg, output_dir)
-                        # if cfg.local_rank in [-1, 0]:
-                        #     tokenizer.save_pretrained(output_dir)
-                        #     torch.save(cfg, os.path.join(output_dir, 'training_args.bin'))
-                        #     logger.info("Saving model checkpoint to %s", output_dir)
-                        #     torch.cuda.empty_cache()
-                        save_model(model, cfg, output_dir, tokenizer)
+                        model.save_checkpoint(output_dir)
 
                     # Evaluation
                     if cfg.evaluate_during_training and cfg.eval_steps > 0 and global_step % cfg.eval_steps == 0:
@@ -432,22 +365,20 @@ def load_and_cache_examples(cfg, tokenizer: PreTrainedTokenizer, _split="train",
     return dataset, features
 
 
-@hydra.main(config_path="conf", config_name="config")
+@hydra.main(config_path="conf/deepspeed", config_name="wiki")
 def main(cfg: DictConfig):
+    deepspeed.init_distributed(dist_backend="nccl")
+
     if cfg.local_rank == -1 or cfg.no_cuda:
         device = str(torch.device("cuda" if torch.cuda.is_available() and not cfg.no_cuda else "cpu"))
         cfg.n_gpu = torch.cuda.device_count()
     else:  # Initializes the distributed backend which will take care of synchronizing nodes/GPUs
         torch.cuda.set_device(cfg.local_rank)
         device = str(torch.device("cuda", cfg.local_rank))
-        dist.init_process_group(backend='nccl')
+        # dist.init_process_group(backend='nccl')
         cfg.n_gpu = 1
     cfg.device = device
 
-    # Setup logging
-    # logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-    #                     datefmt='%m/%d/%Y %H:%M:%S',
-    #                     level=logging.INFO if cfg.local_rank in [-1, 0] else logging.WARN)
     global logger
     logger = setting_logger(cfg.output_dir, local_rank=cfg.local_rank)
     logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
@@ -457,22 +388,23 @@ def main(cfg: DictConfig):
     set_seed(cfg)
 
     # Load pre-trained model and tokenizer
-    if cfg.local_rank not in [-1, 0]:
-        dist.barrier()  # Make sure only the first process in distributed training will download model & vocab
+    # if cfg.local_rank not in [-1, 0]:
+    #     dist.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
     if cfg.pretrain:
         pretrain_state_dict = torch.load(cfg.pretrain, map_location='cpu')
     else:
         pretrain_state_dict = None
 
+    dschf = HfDeepSpeedConfig(cfg.deepspeed_config)
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_name_or_path)
     model = hydra.utils.call(cfg.model, cfg.model_name_or_path, state_dict=pretrain_state_dict)
 
-    if cfg.local_rank == 0:
-        dist.barrier()  # Make sure only the first process in distributed training will download model & vocab
+    # if cfg.local_rank == 0:
+    #     dist.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
-    if cfg.local_rank == -1:  # For FullyShardedDDP, place the model on cpu first.
-        model.to(cfg.device)
+    # if cfg.local_rank == -1:  # For FullyShardedDDP, place the model on cpu first.
+    #     model.to(cfg.device)
 
     # logger.info("Training/evaluation parameters %s", OmegaConf.to_yaml(cfg))
     if cfg.local_rank in [-1, 0]:
@@ -482,22 +414,7 @@ def main(cfg: DictConfig):
 
     # Training
     if cfg.do_train:
-        # TODO: Add option for continuously training from checkpoint.
-        #  The operation should be introduced in ``train`` method since both the state dict
-        #  of schedule and optimizer (and scaler, if any) should be loaded.
-        # If output files already exists, assume to continue training from latest checkpoint (unless overwrite_output_dir is set)
-        continue_from_global_step = 0  # If set to 0, start training from the beginning
-        # if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
-        #     checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/*/' + WEIGHTS_NAME, recursive=True)))
-        #     if len(checkpoints) > 0:
-        #         checkpoint = checkpoints[-1]
-        #         logger.info("Resuming training from the latest checkpoint: %s", checkpoint)
-        #         continue_from_global_step = int(checkpoint.split('-')[-1])
-        #         model = model_class.from_pretrained(checkpoint)
-        #         model.to(args.device)
-
-        # train_dataset, features = load_and_cache_examples(cfg, tokenizer, _split="train")
-        global_step, tr_loss = train(cfg, model, tokenizer, continue_from_global_step)
+        global_step, tr_loss = train(cfg, model, tokenizer)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
     # Save the trained model and the tokenizer
@@ -511,7 +428,8 @@ def main(cfg: DictConfig):
         # They can then be reloaded using `from_pretrained()`
         # model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
         # model_to_save.save_pretrained(cfg.output_dir)
-        save_model(model, cfg, cfg.output_dir)
+        # save_model(model, cfg, cfg.output_dir)
+        model.save_checkpoint(cfg.output_dir)
         if cfg.local_rank == -1 or dist.get_rank() == 0:
             tokenizer.save_pretrained(cfg.output_dir)
 
