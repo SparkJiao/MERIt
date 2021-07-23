@@ -27,21 +27,18 @@ import random
 import sys
 from typing import Dict, Union
 
+import deepspeed
 import hydra
 import numpy as np
 import torch
-from fairscale.nn.data_parallel.fully_sharded_data_parallel import FullyShardedDataParallel as FullyShardedDDP
-from fairscale.nn.wrap.auto_wrap import auto_wrap
-from fairscale.optim.grad_scaler import ShardedGradScaler
+from deepspeed import PipelineEngine
 from omegaconf import DictConfig, OmegaConf
 from torch import distributed as dist
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset, Dataset)
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
-from transformers import (AdamW, get_linear_schedule_with_warmup, AutoTokenizer, PreTrainedTokenizer)
+from transformers import (AutoTokenizer, PreTrainedTokenizer)
 from transformers.deepspeed import HfDeepSpeedConfig
-
-import deepspeed
 
 from general_util.logger import setting_logger
 
@@ -78,14 +75,9 @@ def unwrap_model(model: torch.nn.Module) -> torch.nn.Module:
         return model
 
 
-def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
+def save_model(model: Union[torch.nn.Module, PipelineEngine], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
     # Save model checkpoint.
-    if cfg.local_rank != -1:
-        state_dict = model.state_dict()
-        if cfg.local_rank == 0:
-            unwrap_model(model).save_pretrained(output_dir, state_dict=state_dict)
-    else:
-        model.save_pretrained(output_dir)
+    model.save_checkpoint(output_dir)
 
     # Save tokenizer and training args.
     if cfg.local_rank in [-1, 0]:
@@ -100,28 +92,6 @@ def batch_to_device(batch: Dict[str, torch.Tensor], device):
     for k, v in batch.items():
         batch_on_device[k] = v.to(device)
     return batch_on_device
-
-
-def forward_step(model, inputs: Dict[str, torch.Tensor], cfg, scaler):
-    if cfg.fp16:
-        with torch.cuda.amp.autocast():
-            outputs = model(**inputs)
-            loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
-    else:
-        outputs = model(**inputs)
-        loss = outputs["loss"]  # model outputs are always tuple in pytorch-transformers (see doc)
-
-    if cfg.n_gpu > 1:
-        loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
-    if cfg.gradient_accumulation_steps > 1:
-        loss = loss / cfg.gradient_accumulation_steps
-
-    if cfg.fp16:
-        scaler.scale(loss).backward()
-    else:
-        loss.backward()
-
-    return loss.item()
 
 
 def train(cfg, model, tokenizer, continue_from_global_step=0):
@@ -468,6 +438,12 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+    """ Startup command:
+        TORCH_EXTENSIONS_DIR="/home/share/jiaofangkai/tmp/torch_extensions" \
+        deepspeed --include="localhost:0,1,2,3" reclor_trainer_deepspeed.py --deepspeed=True \
+        --deepspeed_config=conf/deepspeed/defaults.json
+    """
+
     hydra_formatted_args = []
     # convert the cli params added by torch.distributed.launch into Hydra format
     for arg in sys.argv:
