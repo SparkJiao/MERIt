@@ -60,6 +60,7 @@ learning_rate: 1e-4
 gradient_accumulation_steps: 1024
 num_train_epochs: 1
 max_steps: 0
+weight_decay: 0.01
 
 # Optimizer
 #optimizer: lamb

@@ -216,6 +216,7 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
 
                 tr_loss += loss
                 if (step + 1) % cfg.gradient_accumulation_steps == 0:
+                    # if model.is_gradient_accumulation_boundary():
                     global_step += 1
 
                     # Log metrics
@@ -351,8 +352,8 @@ def main(cfg: DictConfig):
 
     global logger
     logger = setting_logger(cfg.output_dir, local_rank=cfg.local_rank)
-    logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
-                   cfg.local_rank, device, cfg.n_gpu, bool(cfg.local_rank != -1), cfg.fp16)
+    logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s",
+                   cfg.local_rank, device, cfg.n_gpu, bool(cfg.local_rank != -1))
 
     # Set seed
     set_seed(cfg)
