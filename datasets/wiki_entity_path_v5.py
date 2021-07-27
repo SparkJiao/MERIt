@@ -529,10 +529,11 @@ class WikiPathDatasetV5(Dataset):
 
 
 class WikiPathDatasetCollator:
-    def __init__(self, max_seq_length: int, tokenizer: str, mlm_probability: float = 0.15):
+    def __init__(self, max_seq_length: int, tokenizer: str, mlm_probability: float = 0.15, max_option_num: int = 4):
         self.max_seq_length = max_seq_length
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer)
         self.mlm_probability = mlm_probability
+        self.max_option_num = max_option_num
 
     def __call__(self, batch):
         # examples, texts = list(zip(*batch))
@@ -547,11 +548,12 @@ class WikiPathDatasetCollator:
         sentences = []
         options = []
         for e in examples:
-            op = [e["positive"]] + e["negative"]
+            op = ([e["positive"]] + e["negative"])[:self.max_option_num]
             options.extend(op)
             sentences.extend([e["context"]] * len(op))
         batch_size = len(examples)
-        option_num = len(examples[0]["negative"]) + 1
+        # option_num = len(examples[0]["negative"]) + 1
+        option_num = min(len(examples[0]["negative"]) + 1, self.max_option_num)
 
         tokenizer_outputs = self.tokenizer(sentences, options, padding=PaddingStrategy.MAX_LENGTH,
                                            truncation=TruncationStrategy.LONGEST_FIRST, max_length=self.max_seq_length,

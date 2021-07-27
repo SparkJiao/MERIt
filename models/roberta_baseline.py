@@ -176,8 +176,8 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
         logits = self.cls(self.dropout(self.pooler(pooled_output)))
         reshaped_logits = logits.view(-1, num_choices)
 
-        choice_mask = (attention_mask.sum(dim=-1) == 0).reshape(-1, num_choices)
-        reshaped_logits = reshaped_logits + choice_mask * -10000.0
+        # choice_mask = (attention_mask.sum(dim=-1) == 0).reshape(-1, num_choices)
+        # reshaped_logits = reshaped_logits + choice_mask * -10000.0
 
         loss = None
         if labels is not None:

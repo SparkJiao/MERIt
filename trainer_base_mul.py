@@ -207,8 +207,9 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                                 mixed_precision=cfg.fp16,
                                 reshard_after_forward=cfg.reshard_after_forward,
                                 cpu_offload=cfg.cpu_offload,
-                                move_grads_to_cpu=cfg.move_grads_to_cpu)
-        # move_params_to_cpu=cfg.move_params_to_cpu).to(cfg.device)
+                                move_grads_to_cpu=cfg.move_grads_to_cpu,
+                                clear_autocast_cache=True,
+                                move_params_to_cpu=cfg.move_params_to_cpu)
         if not cfg.cpu_offload:
             model = model.to(cfg.device)
 
@@ -385,12 +386,13 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
         batch = batch_to_device(batch, cfg.device)
 
         with torch.no_grad():
-            outputs = model(**batch)
-            # logits = outputs["logits"].detach().cpu()
-            probs = outputs["logits"].softmax(dim=-1).detach().cpu()
-            prob, pred = probs.max(dim=-1)
-            pred_list.extend(pred.tolist())
-            prob_list.extend(prob.tolist())
+            with torch.cuda.amp.autocast():
+                outputs = model(**batch)
+                # logits = outputs["logits"].detach().cpu()
+                probs = outputs["logits"].softmax(dim=-1).detach().cpu()
+                prob, pred = probs.max(dim=-1)
+                pred_list.extend(pred.tolist())
+                prob_list.extend(prob.tolist())
 
     metric_log, results = single_model_gpu.get_eval_log(reset=True)
     logger.info("****** Evaluation Results ******")
