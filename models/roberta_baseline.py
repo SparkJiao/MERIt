@@ -1,5 +1,6 @@
 from abc import ABC
 
+from fairscale.nn.checkpoint.checkpoint_activations import checkpoint_wrapper
 from torch import nn, Tensor
 from torch.nn import CrossEntropyLoss
 from transformers.modeling_outputs import MultipleChoiceModelOutput
@@ -15,7 +16,11 @@ logger = get_child_logger("RoBERTa")
 class RobertaForMultipleChoice(RobertaPreTrainedModel, LogMixin, ABC):
     _keys_to_ignore_on_load_missing = [r"position_ids"]
 
-    def __init__(self, config: RobertaConfig, re_init_cls: bool = False):
+    def __init__(self, config: RobertaConfig,
+                 re_init_cls: bool = False,
+                 fs_checkpoint: bool = False,
+                 fs_checkpoint_offload_to_cpu: bool = False,
+                 fs_checkpoint_maintain_forward_counter: bool = False):
         super().__init__(config)
 
         self.roberta = RobertaModel(config)
@@ -25,6 +30,12 @@ class RobertaForMultipleChoice(RobertaPreTrainedModel, LogMixin, ABC):
         if self.re_init_cls:
             self.classifier_i = nn.Linear(config.hidden_size, 1)
         self.classifier = nn.Linear(config.hidden_size, 1)
+
+        if fs_checkpoint:
+            for i in range(config.num_hidden_layers):
+                self.roberta.encoder.layer[i] = checkpoint_wrapper(self.roberta.encoder.layer[i],
+                                                                   offload_to_cpu=fs_checkpoint_offload_to_cpu,
+                                                                   maintain_forward_counter=fs_checkpoint_maintain_forward_counter)
 
         self.init_weights()
 
@@ -113,7 +124,11 @@ class RobertaForMultipleChoice(RobertaPreTrainedModel, LogMixin, ABC):
 class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC):
     _keys_to_ignore_on_load_missing = [r"position_ids"]
 
-    def __init__(self, config: RobertaConfig, mlp_hidden_size: int = 768):
+    def __init__(self, config: RobertaConfig,
+                 mlp_hidden_size: int = 768,
+                 fs_checkpoint: bool = False,
+                 fs_checkpoint_offload_to_cpu: bool = False,
+                 fs_checkpoint_maintain_forward_counter: bool = False):
         super().__init__(config)
 
         self.roberta = RobertaModel(config)
@@ -126,6 +141,12 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
             nn.Tanh()
         )
         self.cls = nn.Linear(mlp_hidden_size, 1)
+
+        if fs_checkpoint:
+            for i in range(config.num_hidden_layers):
+                self.roberta.encoder.layer[i] = checkpoint_wrapper(self.roberta.encoder.layer[i],
+                                                                   offload_to_cpu=fs_checkpoint_offload_to_cpu,
+                                                                   maintain_forward_counter=fs_checkpoint_maintain_forward_counter)
 
         self.init_weights()
 
@@ -226,7 +247,10 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
 class RobertaForMaskedLM(RobertaPreTrainedModel, LogMixin, ABC):
     _keys_to_ignore_on_load_missing = [r"position_ids", r"lm_head.decoder.bias"]
 
-    def __init__(self, config: RobertaConfig):
+    def __init__(self, config: RobertaConfig,
+                 fs_checkpoint: bool = False,
+                 fs_checkpoint_offload_to_cpu: bool = False,
+                 fs_checkpoint_maintain_forward_counter: bool = False):
         super().__init__(config)
 
         if config.is_decoder:
@@ -238,6 +262,12 @@ class RobertaForMaskedLM(RobertaPreTrainedModel, LogMixin, ABC):
         self.roberta = RobertaModel(config)
         self.lm_head = RobertaLMHead(config)
         self.vocab_size = config.vocab_size
+
+        if fs_checkpoint:
+            for i in range(config.num_hidden_layers):
+                self.roberta.encoder.layer[i] = checkpoint_wrapper(self.roberta.encoder.layer[i],
+                                                                   offload_to_cpu=fs_checkpoint_offload_to_cpu,
+                                                                   maintain_forward_counter=fs_checkpoint_maintain_forward_counter)
 
         self.init_weights()
 

@@ -13,6 +13,10 @@ model:
 #  offload_to_cpu: False
 #  return_dict: False
   _target_: models.roberta_baseline.RobertaForMultipleChoice.from_pretrained
+#  re_init_cls: True
+  fs_checkpoint: False
+  fs_checkpoint_offload_to_cpu: False
+  fs_checkpoint_maintain_forward_counter: False
 
 # Data loading
 read_tensor:
@@ -29,32 +33,69 @@ collator:
 num_workers: 4
 prefetch_factor: 2
 
-
+#model_name_or_path: pretrained-models/roberta-large
 #model_name_or_path: pretrained-models/albert-xxlarge-v2
-#model_name_or_path: pretrained-models/roberta-large-mnli
-model_name_or_path: pretrained-models/roberta-base
-pretrain: "pretrained-models/ERICA_pretrained/pre-trained model parameters/roberta_ep_rp.bin"
+model_name_or_path: pretrained-models/roberta-large-mnli
+#model_name_or_path: pretrained-models/roberta-base
+#model_name_or_path: pretrained-models/ERICA_pretrained/pretrained-models/roberta_ep_rp_hf
+#pretrain: "pretrained-models/ERICA_pretrained/pretrained-models/roberta_ep_rp.bin"
+#model_name_or_path: experiments/roberta.base.wiki_erica_path_v4_0.1.0.2080Ti/checkpoint-400
+#model_name_or_path: experiments/roberta.base.wiki_erica_path_v4_0.1.1.2080Ti/checkpoint-600
+#model_name_or_path: experiments/roberta.base.wiki_erica_path_v4_0.2.0.2080Ti/checkpoint-1000
+#model_name_or_path: experiments/roberta.base.wiki_erica_path_v4_0.2.0.2080Ti/checkpoint-500
+#model_name_or_path: experiments/roberta.base.wiki_erica_path_v4_1.2.0.2080Ti/checkpoint-500
+#model_name_or_path: experiments/roberta.base.wiki_erica_path_v4_1.2.0.2080Ti/checkpoint-400
+#model_name_or_path: experiments/roberta.base.wiki_erica_path_v4_1.1.0.2080Ti/checkpoint-900
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v4_1.2.0.TeslaT4/checkpoint-250
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v5_0.1.0.2080Ti/checkpoint-250
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v5_1.1.0.2080Ti/checkpoint-200
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v6_0.1.0.2080Ti/checkpoint-100
+pretrain:
 
 #output_dir: experiments/roberta.base.2.0
-output_dir: experiments/roberta.base.erica.ep.rp.1.0
+#output_dir: experiments/roberta.base.erica.ep.rp.1.0.tmp
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0_cp400.1.0.2080Ti
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0_cp400.1.1.2080Ti  # re-initialize the classifier.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0_cp400.1.2.2080Ti  # smaller learning rate.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0_cp400.1.3.2080Ti  # smaller learning rate.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0.1.1_cp600.1.0.2080Ti  # new pre-trained model using smaller learning rate.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0.1.1_cp600.1.1.2080Ti  # less training steps.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0.1.1_cp600.1.2.2080Ti  # larger learning rate.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0.1.1_cp600.1.3.2080Ti  # smaller learning rate.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0.2.0_cp1000.1.0.2080Ti  # MLM augmented pre-training model.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0.2.0_cp1000.1.1.2080Ti  # larger learning rate.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0.2.0_cp500.1.0.2080Ti  # less pre-training steps and larger learning rate.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_0.2.0_cp500.1.1.2080Ti  # smaller learning rate.
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_1.2.0_cp500.1.1.2080Ti
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_1.2.0_cp500.1.0.2080Ti
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_1.2.0_cp400.1.1.2080Ti
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_1.1.0_cp900.1.1.2080Ti
+#output_dir: experiments/roberta.base.wiki_erica_path_v4_1.1.0_cp900.1.0.2080Ti
 
 #output_dir: experiments/albert.xxlarge-v2.2.0
 #output_dir: experiments/roberta.large.mnli.2.0.titan
+output_dir: experiments/roberta.large.mnli.2.0.titan.cp_test
 
 #output_dir: experiments/roberta.large.mnli.2.1.TeslaT4
 #output_dir: experiments/roberta.large.mnli.2.2.TeslaT4
+#output_dir: experiments/roberta.large.2.0.TeslaT4
+#output_dir: experiments/roberta.large.wiki_erica_path_v4_1_2.0.cp250.2.0.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v5_0_1.0.cp250.2.0.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v5_1_1.0.cp200.2.0.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v6_0_1.0.cp100.2.0.TeslaT4
+#output_dir: experiments/roberta.large.wiki_erica_path_v6_0_1.0.cp100.2.0.2080Ti
 
-do_train: False
+do_train: True
 evaluate_during_training: True
 
-do_eval: True
-eval_sub_path: "checkpoint-1400"
+do_eval: False
+eval_sub_path:
 
 # Training hyper-parameters
-per_gpu_train_batch_size: 8
-per_gpu_eval_batch_size: 8
+per_gpu_train_batch_size: 1
+per_gpu_eval_batch_size: 1
 learning_rate: 1e-5
-gradient_accumulation_steps: 3
+gradient_accumulation_steps: 24
 weight_decay: 0.01
 adam_epsilon: 1e-6
 adam_betas: "(0.9, 0.98)"

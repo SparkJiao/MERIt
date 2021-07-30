@@ -11,6 +11,9 @@ model:
   _target_: models.roberta_baseline.RobertaForMultipleChoiceForPreTrain.from_pretrained
 #  mlp_hidden_size: 1536
   mlp_hidden_size: 2048  # For large model.
+  fs_checkpoint: False
+  fs_checkpoint_offload_to_cpu: False
+  fs_checkpoint_maintain_forward_counter: False
 
 # Data loading
 read_tensor:
