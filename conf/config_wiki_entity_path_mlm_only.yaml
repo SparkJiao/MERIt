@@ -2,33 +2,17 @@ hydra:
   run:
     dir: ./
 
-#train_file: /home/share/jiaofangkai/wiki_erica_path/train_distant_[1-9].roberta_path.json
-#dev_file: /home/share/jiaofangkai/wiki_erica_path/train_distant_dev.roberta_path.json
-#train_file: /home/share/jiaofangkai/wiki_erica_path/v3.0/train_distant.all.path_v3.train.json
-#dev_file: /home/share/jiaofangkai/wiki_erica_path/v3.0/train_distant.all.path_v3.dev.json
-#train_file: /home/share/jiaofangkai/wiki_erica_path/v4.0/train_distant.all.path_v4.train.json
-#dev_file: /home/share/jiaofangkai/wiki_erica_path/v4.0/train_distant.all.path_v4.dev.json
-#train_file: /home/share/jiaofangkai/wiki_erica_path/v4.1/train_distant.path_v4.1.train.[0-4].json
-#dev_file: /home/share/jiaofangkai/wiki_erica_path/v4.1/train_distant_0.path_v4.1.dev.json
-#train_file: /home/share/jiaofangkai/wiki_erica_path/v5/train_distant.path_v5.train.[0-4].pkl
-#dev_file: /home/share/jiaofangkai/wiki_erica_path/v5/train_distant.path_v5.dev.pkl
 train_file: /home/share/jiaofangkai/wiki_erica_path/v5/union/train_distant.path_v5.train.0.pkl
 dev_file: /home/share/jiaofangkai/wiki_erica_path/v5/union/train_distant.path_v5.dev.pkl
 test_file:
 
 # Model
 model:
-  _target_: models.roberta_baseline.RobertaForMultipleChoiceForPreTrain.from_pretrained
-#  mlp_hidden_size: 1536
-  mlp_hidden_size: 2048  # For large model.
+  _target_: models.roberta_baseline.RobertaForMaskedLM.from_pretrained
 
 # Data loading
 read_tensor:
-#  _target_: datasets.wiki_entity_path_v5.convert_examples_into_features
-#  _target_: datasets.wiki_entity_path_v5_1.convert_examples_into_features
-#  _target_: datasets.wiki_entity_path_v6.convert_examples_into_features
   _target_: datasets.wiki_entity_path_v7.convert_examples_into_features
-#  _target_: datasets.wiki_entity_path_v7_1.convert_examples_into_features
   max_neg_num: 3
   aug_num: 2
   max_seq_length: 384
@@ -42,11 +26,7 @@ extended_vocab:
 
 # Data collator
 collator:
-#  _target_: datasets.collators.BaseDictCollator
-#  add_mlm_labels: True
-#  mlm_probability: 0.15
-#  tokenizer: pretrained-models/roberta-base
-  _target_: datasets.wiki_entity_path_v5.WikiPathDatasetCollator
+  _target_: datasets.wiki_entity_path_v5.WikiPathDatasetCollatorOnlyMLM
   max_seq_length: 384
   tokenizer: pretrained-models/roberta-large
   mlm_probability: 0.15
@@ -82,14 +62,16 @@ pretrain:
 #output_dir: experiments/roberta.large.wiki_erica_path_v5_0.1.0.2080Ti
 #output_dir: experiments/roberta.large.wiki_erica_path_v5_1.1.0.2080Ti
 #output_dir: experiments/roberta.large.wiki_erica_path_v6_0.1.0.2080Ti
-output_dir: experiments/roberta.large.wiki_erica_path_v7_0.1.0.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v7_0.1.0.2080Ti
 #output_dir: experiments/roberta.large.wiki_erica_path_v7_1.1.0.2080Ti.pp
+
+output_dir: experiments/roberta.large.wiki_erica_path_v7_0.1.0.mlm_only.2080Ti
 
 do_train: True
 evaluate_during_training: True
 
 do_eval: False
-eval_sub_path: "checkpoint-1400"
+eval_sub_path:
 
 do_preprocess: False
 
@@ -99,10 +81,10 @@ do_preprocess: False
 #per_gpu_eval_batch_size: 4
 #learning_rate: 1e-4
 # ============= For large model =============
-per_gpu_train_batch_size: 1
-per_gpu_eval_batch_size: 1
+per_gpu_train_batch_size: 4
+per_gpu_eval_batch_size: 4
 learning_rate: 1e-4
-gradient_accumulation_steps: 1024
+gradient_accumulation_steps: 256
 weight_decay: 0.01
 adam_epsilon: 1e-6
 adam_betas: "(0.9, 0.98)"

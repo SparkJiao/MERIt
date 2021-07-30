@@ -615,3 +615,25 @@ class WikiPathDatasetCollator:
 
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
         return inputs, labels
+
+
+class WikiPathDatasetCollatorOnlyMLM(WikiPathDatasetCollator):
+    def __call__(self, batch):
+        texts = []
+        for b in batch:
+            texts.append(b.pop("text"))
+        del batch
+
+        mlm_tokenize_outputs = self.tokenizer(texts, padding=PaddingStrategy.MAX_LENGTH,
+                                              truncation=TruncationStrategy.LONGEST_FIRST, max_length=self.max_seq_length,
+                                              return_tensors="pt")
+        mlm_input_ids = mlm_tokenize_outputs["input_ids"]
+        mlm_attention_mask = mlm_tokenize_outputs["attention_mask"]
+
+        mlm_input_ids, mlm_labels = self.mask_tokens(mlm_input_ids)
+
+        return {
+            "input_ids": mlm_input_ids,
+            "attention_mask": mlm_attention_mask,
+            "labels": mlm_labels
+        }

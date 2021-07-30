@@ -2,16 +2,6 @@ hydra:
   run:
     dir: ./
 
-#train_file: /home/share/jiaofangkai/wiki_erica_path/train_distant_[1-9].roberta_path.json
-#dev_file: /home/share/jiaofangkai/wiki_erica_path/train_distant_dev.roberta_path.json
-#train_file: /home/share/jiaofangkai/wiki_erica_path/v3.0/train_distant.all.path_v3.train.json
-#dev_file: /home/share/jiaofangkai/wiki_erica_path/v3.0/train_distant.all.path_v3.dev.json
-#train_file: /home/share/jiaofangkai/wiki_erica_path/v4.0/train_distant.all.path_v4.train.json
-#dev_file: /home/share/jiaofangkai/wiki_erica_path/v4.0/train_distant.all.path_v4.dev.json
-#train_file: /home/share/jiaofangkai/wiki_erica_path/v4.1/train_distant.path_v4.1.train.[0-4].json
-#dev_file: /home/share/jiaofangkai/wiki_erica_path/v4.1/train_distant_0.path_v4.1.dev.json
-#train_file: /home/share/jiaofangkai/wiki_erica_path/v5/train_distant.path_v5.train.[0-4].pkl
-#dev_file: /home/share/jiaofangkai/wiki_erica_path/v5/train_distant.path_v5.dev.pkl
 train_file: /home/share/jiaofangkai/wiki_erica_path/v5/union/train_distant.path_v5.train.0.pkl
 dev_file: /home/share/jiaofangkai/wiki_erica_path/v5/union/train_distant.path_v5.dev.pkl
 test_file:
@@ -24,16 +14,14 @@ model:
 
 # Data loading
 read_tensor:
-#  _target_: datasets.wiki_entity_path_v5.convert_examples_into_features
-#  _target_: datasets.wiki_entity_path_v5_1.convert_examples_into_features
-#  _target_: datasets.wiki_entity_path_v6.convert_examples_into_features
-  _target_: datasets.wiki_entity_path_v7.convert_examples_into_features
-#  _target_: datasets.wiki_entity_path_v7_1.convert_examples_into_features
+#  _target_: datasets.wiki_entity_path_v7.convert_examples_into_features
+  _target_: datasets.wiki_entity_path_v7_1.convert_examples_into_features
   max_neg_num: 3
   aug_num: 2
   max_seq_length: 384
   shuffle_context: True
-  min_rep_num: 2
+#  min_rep_num: 2
+  min_rep_num: 6
   geo_p: 0.4
   num_workers: 64
 
@@ -42,10 +30,6 @@ extended_vocab:
 
 # Data collator
 collator:
-#  _target_: datasets.collators.BaseDictCollator
-#  add_mlm_labels: True
-#  mlm_probability: 0.15
-#  tokenizer: pretrained-models/roberta-base
   _target_: datasets.wiki_entity_path_v5.WikiPathDatasetCollator
   max_seq_length: 384
   tokenizer: pretrained-models/roberta-large
@@ -82,14 +66,15 @@ pretrain:
 #output_dir: experiments/roberta.large.wiki_erica_path_v5_0.1.0.2080Ti
 #output_dir: experiments/roberta.large.wiki_erica_path_v5_1.1.0.2080Ti
 #output_dir: experiments/roberta.large.wiki_erica_path_v6_0.1.0.2080Ti
-output_dir: experiments/roberta.large.wiki_erica_path_v7_0.1.0.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v7_0.1.0.2080Ti
 #output_dir: experiments/roberta.large.wiki_erica_path_v7_1.1.0.2080Ti.pp
+output_dir: experiments/roberta.large.wiki_erica_path_v7_1.rep6.1.0.2080Ti
 
 do_train: True
 evaluate_during_training: True
 
 do_eval: False
-eval_sub_path: "checkpoint-1400"
+eval_sub_path:
 
 do_preprocess: False
 
@@ -110,7 +95,6 @@ max_grad_norm: 5.0
 num_train_epochs: 1
 max_steps: 0
 warmup_proportion: 0.1
-#warmup_proportion: 0.2
 warmup_steps: 0
 
 # Optimizer

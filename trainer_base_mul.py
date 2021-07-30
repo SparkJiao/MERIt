@@ -227,7 +227,7 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                                   use_nvlamb=(cfg.use_nvlamb if "use_nvlamb" in cfg else False),
                                   max_grad_norm=cfg.max_grad_norm)
         else:
-            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon)
+            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
 
     logger.info(optimizer)
@@ -322,12 +322,6 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                         output_dir = os.path.join(cfg.output_dir, 'checkpoint-{}'.format(global_step))
                         if cfg.local_rank in [-1, 0] and not os.path.exists(output_dir):
                             os.makedirs(output_dir)
-                        # save_model(model, cfg, output_dir)
-                        # if cfg.local_rank in [-1, 0]:
-                        #     tokenizer.save_pretrained(output_dir)
-                        #     torch.save(cfg, os.path.join(output_dir, 'training_args.bin'))
-                        #     logger.info("Saving model checkpoint to %s", output_dir)
-                        #     torch.cuda.empty_cache()
                         save_model(model, cfg, output_dir, tokenizer)
 
                     # Evaluation
@@ -386,13 +380,12 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
         batch = batch_to_device(batch, cfg.device)
 
         with torch.no_grad():
-            with torch.cuda.amp.autocast():
-                outputs = model(**batch)
-                # logits = outputs["logits"].detach().cpu()
-                probs = outputs["logits"].softmax(dim=-1).detach().cpu()
-                prob, pred = probs.max(dim=-1)
-                pred_list.extend(pred.tolist())
-                prob_list.extend(prob.tolist())
+            outputs = model(**batch)
+            # logits = outputs["logits"].detach().cpu()
+            probs = outputs["logits"].softmax(dim=-1).detach().cpu().float()
+            prob, pred = probs.max(dim=-1)
+            pred_list.extend(pred.tolist())
+            prob_list.extend(prob.tolist())
 
     metric_log, results = single_model_gpu.get_eval_log(reset=True)
     logger.info("****** Evaluation Results ******")

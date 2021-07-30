@@ -3,7 +3,7 @@ from abc import ABC
 from torch import nn, Tensor
 from torch.nn import CrossEntropyLoss
 from transformers.modeling_outputs import MultipleChoiceModelOutput
-from transformers.models.roberta.modeling_roberta import RobertaModel, RobertaPreTrainedModel, RobertaConfig, RobertaLMHead
+from transformers.models.roberta.modeling_roberta import RobertaModel, RobertaPreTrainedModel, RobertaConfig, RobertaLMHead, MaskedLMOutput
 
 from general_util.logger import get_child_logger
 from general_util.mixin import LogMixin
@@ -197,6 +197,9 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
                 mlm_scores = self.lm_head(mlm_outputs[0])
                 mlm_loss = loss_fct(mlm_scores.reshape(-1, self.vocab_size), mlm_labels.reshape(-1))
                 loss += mlm_loss
+            else:
+                mlm_scores = None
+                mlm_loss = None
 
             if not self.training:
                 acc, true_label_num = layers.get_accuracy(reshaped_logits, labels)
@@ -215,6 +218,95 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
         return MultipleChoiceModelOutput(
             loss=loss,
             logits=reshaped_logits,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+
+class RobertaForMaskedLM(RobertaPreTrainedModel, LogMixin, ABC):
+    _keys_to_ignore_on_load_missing = [r"position_ids", r"lm_head.decoder.bias"]
+
+    def __init__(self, config: RobertaConfig):
+        super().__init__(config)
+
+        if config.is_decoder:
+            logger.warning(
+                "If you want to use `RobertaForMaskedLM` make sure `config.is_decoder=False` for "
+                "bi-directional self-attention."
+            )
+
+        self.roberta = RobertaModel(config)
+        self.lm_head = RobertaLMHead(config)
+        self.vocab_size = config.vocab_size
+
+        self.init_weights()
+
+        self.init_metric("loss", "acc")
+
+    def get_output_embeddings(self):
+        return self.lm_head.decoder
+
+    def set_output_embeddings(self, new_embeddings):
+        self.lm_head.decoder = new_embeddings
+
+    def forward(
+            self,
+            input_ids=None,
+            attention_mask=None,
+            token_type_ids=None,
+            position_ids=None,
+            head_mask=None,
+            inputs_embeds=None,
+            encoder_hidden_states=None,
+            encoder_attention_mask=None,
+            labels=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
+    ):
+        r"""
+        labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
+            Labels for computing the masked language modeling loss. Indices should be in ``[-100, 0, ...,
+            config.vocab_size]`` (see ``input_ids`` docstring) Tokens with indices set to ``-100`` are ignored
+            (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``
+        kwargs (:obj:`Dict[str, any]`, optional, defaults to `{}`):
+            Used to hide legacy arguments that have been deprecated.
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.roberta(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        sequence_output = outputs[0]
+        prediction_scores = self.lm_head(sequence_output)
+
+        masked_lm_loss = None
+        if labels is not None:
+            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.vocab_size), labels.view(-1))
+
+            if not self.training:
+                acc, true_label_num = layers.get_accuracy(prediction_scores, labels)
+                self.eval_metrics.update("acc", acc, n=true_label_num)
+                self.eval_metrics.update("loss", masked_lm_loss.item(), n=true_label_num)
+
+        if not return_dict:
+            output = (prediction_scores,) + outputs[2:]
+            return ((masked_lm_loss,) + output) if masked_lm_loss is not None else output
+
+        return MaskedLMOutput(
+            loss=masked_lm_loss,
+            logits=prediction_scores,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
