@@ -823,7 +823,10 @@ class WikiPathDatasetCollatorWithContext(WikiPathDatasetCollator):
             op = e.pop("condition")
             input_a.extend([positive_context] + negative_context)
             input_b.extend([op] * (len(negative_context) + 1))
-            assert option_num == len(negative_context) + 1
+            if option_num == -1:
+                option_num = len(negative_context) + 1
+            else:
+                assert option_num == len(negative_context) + 1, (option_num, len(negative_context))
 
         option_num = min(option_num, self.max_option_num)
 

@@ -2,8 +2,8 @@ hydra:
   run:
     dir: ./
 
-train_file: /home/share/jiaofangkai/wiki_erica_path/v6/union/train_distant.path_v6.train.0.pkl
-dev_file: /home/share/jiaofangkai/wiki_erica_path/v6/union/train_distant.path_v6.dev.pkl
+train_file: ../../union/train_distant.path_v6.train.0.pkl
+dev_file: ../../union/train_distant.path_v6.dev.pkl
 test_file:
 
 # Model
@@ -33,7 +33,7 @@ extended_vocab:
 collator:
   _target_: datasets.wiki_entity_path_v8.WikiPathDatasetCollatorWithContext
   max_seq_length: 384
-  tokenizer: pretrained-models/roberta-large
+  tokenizer: ../../pretrained-models/roberta-large
   mlm_probability: 0.15
   max_option_num: 4
 #  max_option_num: 6
@@ -44,7 +44,7 @@ prefetch_factor: 2
 
 
 #model_name_or_path: pretrained-models/roberta-large-mnli
-model_name_or_path: pretrained-models/roberta-large
+model_name_or_path: ../../pretrained-models/roberta-large
 #model_name_or_path: pretrained-models/roberta-base
 pretrain:
 
@@ -73,7 +73,7 @@ pretrain:
 #output_dir: experiments/roberta.large.wiki_erica_path_v7_1.rep6.1.0.2080Ti  # version 7_1.rep6 has a bug where some examples have less than 3 negative examples.
 #output_dir: experiments/roberta.large.wiki_erica_path_v7_2.rep6.1.0.2080Ti  # Fix replacement bug.
 
-output_dir: experiments/roberta.large.wiki_erica_path_v8.rep6.1.0.2080Ti
+output_dir: experiments/roberta.large.wiki_erica_path_v8.rep6.1.0.v100-16g
 
 do_train: Train
 evaluate_during_training: True
@@ -81,7 +81,7 @@ evaluate_during_training: True
 do_eval: False
 eval_sub_path:
 
-do_preprocess: True
+do_preprocess: False
 
 # Training hyper-parameters
 # ============= For base model ==========
@@ -89,10 +89,10 @@ do_preprocess: True
 #per_gpu_eval_batch_size: 4
 #learning_rate: 1e-4
 # ============= For large model =============
-per_gpu_train_batch_size: 1
-per_gpu_eval_batch_size: 1
+per_gpu_train_batch_size: 2
+per_gpu_eval_batch_size: 2
 learning_rate: 1e-4
-gradient_accumulation_steps: 1024
+gradient_accumulation_steps: 256
 weight_decay: 0.01
 adam_epsilon: 1e-6
 adam_betas: "(0.9, 0.98)"
@@ -109,7 +109,7 @@ use_nvlamb: True
 logging_steps: 1
 save_steps: 50
 eval_steps: 50
-no_cuda: True
+no_cuda: False
 seed: 42
 local_rank: -1
 fp16: True
