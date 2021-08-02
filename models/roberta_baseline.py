@@ -128,7 +128,8 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
                  mlp_hidden_size: int = 768,
                  fs_checkpoint: bool = False,
                  fs_checkpoint_offload_to_cpu: bool = False,
-                 fs_checkpoint_maintain_forward_counter: bool = False):
+                 fs_checkpoint_maintain_forward_counter: bool = False,
+                 fs_checkpoint_start_layer_id: int = 0):
         super().__init__(config)
 
         self.roberta = RobertaModel(config)
@@ -143,7 +144,7 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
         self.cls = nn.Linear(mlp_hidden_size, 1)
 
         if fs_checkpoint:
-            for i in range(config.num_hidden_layers):
+            for i in range(fs_checkpoint_start_layer_id, config.num_hidden_layers):
                 self.roberta.encoder.layer[i] = checkpoint_wrapper(self.roberta.encoder.layer[i],
                                                                    offload_to_cpu=fs_checkpoint_offload_to_cpu,
                                                                    maintain_forward_counter=fs_checkpoint_maintain_forward_counter)

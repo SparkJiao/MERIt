@@ -208,7 +208,6 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                                 reshard_after_forward=cfg.reshard_after_forward,
                                 cpu_offload=cfg.cpu_offload,
                                 move_grads_to_cpu=cfg.move_grads_to_cpu,
-                                clear_autocast_cache=True,
                                 move_params_to_cpu=cfg.move_params_to_cpu)
         if not cfg.cpu_offload:
             model = model.to(cfg.device)
