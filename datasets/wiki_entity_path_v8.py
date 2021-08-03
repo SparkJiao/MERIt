@@ -786,6 +786,10 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
 
 
 class WikiPathDatasetCollatorWithContext(WikiPathDatasetCollator):
+    def __init__(self, max_seq_length: int, tokenizer: str, mlm_probability: float = 0.15, max_option_num: int = 4, swap: bool = False):
+        super().__init__(max_seq_length, tokenizer, mlm_probability, max_option_num)
+        self.swap = swap
+
     def __call__(self, batch):
         # examples, texts = list(zip(*batch))
         op_examples, ctx_examples, texts = [], [], []
@@ -810,8 +814,12 @@ class WikiPathDatasetCollatorWithContext(WikiPathDatasetCollator):
 
         for e in op_examples:
             op = ([e["positive"]] + e["negative"])[:self.max_option_num]
-            input_a.extend(op)
-            input_b.extend([e["context"]] * len(op))
+            if self.swap:
+                input_a.extend([e["context"]] * len(op))
+                input_b.extend(op)
+            else:
+                input_a.extend(op)
+                input_b.extend([e["context"]] * len(op))
             if option_num == -1:
                 option_num = len(op)
             else:
