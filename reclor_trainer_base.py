@@ -23,7 +23,6 @@ import glob
 import json
 import logging
 import os
-import random
 import sys
 from typing import Dict, Union
 
@@ -41,6 +40,7 @@ from tqdm import tqdm, trange
 from transformers import (AdamW, get_linear_schedule_with_warmup, AutoTokenizer, PreTrainedTokenizer)
 
 from general_util.logger import setting_logger
+from general_util.training_utils import batch_to_device, unwrap_model, set_seed
 
 try:
     from tensorboardX import SummaryWriter
@@ -48,31 +48,6 @@ except ImportError:
     from torch.utils.tensorboard import SummaryWriter
 
 logger: logging.Logger
-
-
-def set_seed(args):
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    if args.n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
-
-
-def to_list(tensor):
-    return tensor.detach().cpu().tolist()
-
-
-def unwrap_model(model: torch.nn.Module) -> torch.nn.Module:
-    """
-    Recursively unwraps a model from potential containers (as used in distributed training).
-    Args:
-        model (:obj:`torch.nn.Module`): The model to unwrap.
-    """
-    # since there could be multiple levels of wrapping, unwrap recursively
-    if hasattr(model, "module"):
-        return unwrap_model(model.module)
-    else:
-        return model
 
 
 def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
@@ -90,13 +65,6 @@ def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, 
             tokenizer.save_pretrained(output_dir)
         OmegaConf.save(cfg, os.path.join(output_dir, "training_config.yaml"))
         logger.info("Saving model checkpoint to %s", output_dir)
-
-
-def batch_to_device(batch: Dict[str, torch.Tensor], device):
-    batch_on_device = {}
-    for k, v in batch.items():
-        batch_on_device[k] = v.to(device)
-    return batch_on_device
 
 
 def forward_step(model, inputs: Dict[str, torch.Tensor], cfg, scaler):
@@ -308,8 +276,6 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
 def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"):
     dataset, features = load_and_cache_examples(cfg, tokenizer, _split=_split)
 
-    # if not os.path.exists(cfg.output_dir) and cfg.local_rank in [-1, 0]:
-    #     os.makedirs(cfg.output_dir)
     if not os.path.exists(os.path.join(cfg.output_dir, prefix)):
         os.makedirs(os.path.join(cfg.output_dir, prefix))
 
@@ -384,12 +350,9 @@ def main(cfg: DictConfig):
         device = str(torch.device("cuda", cfg.local_rank))
         dist.init_process_group(backend='nccl')
         cfg.n_gpu = 1
+        cfg.world_size = dist.get_world_size()
     cfg.device = device
 
-    # Setup logging
-    # logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-    #                     datefmt='%m/%d/%Y %H:%M:%S',
-    #                     level=logging.INFO if cfg.local_rank in [-1, 0] else logging.WARN)
     global logger
     logger = setting_logger(cfg.output_dir, local_rank=cfg.local_rank)
     logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",

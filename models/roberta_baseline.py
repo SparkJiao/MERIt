@@ -151,7 +151,7 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
 
         self.init_weights()
 
-        self.init_metric("loss", "acc", "mlm_loss", "mlm_acc")
+        self.init_metric("loss", "acc", "mlm_loss", "mlm_acc", "cls_loss")
 
     @staticmethod
     def fold_tensor(x: Tensor):
@@ -201,10 +201,11 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
         # choice_mask = (attention_mask.sum(dim=-1) == 0).reshape(-1, num_choices)
         # reshaped_logits = reshaped_logits + choice_mask * -10000.0
 
-        loss = None
+        loss = 0.
         if labels is not None:
             loss_fct = CrossEntropyLoss(ignore_index=-1)
-            loss = loss_fct(reshaped_logits, labels)
+            cls_loss = loss_fct(reshaped_logits, labels)
+            loss = loss + cls_loss
 
             if mlm_labels is not None:
                 if mlm_attention_mask is None:
@@ -218,7 +219,7 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
 
                 mlm_scores = self.lm_head(mlm_outputs[0])
                 mlm_loss = loss_fct(mlm_scores.reshape(-1, self.vocab_size), mlm_labels.reshape(-1))
-                loss += mlm_loss
+                loss = loss + mlm_loss
             else:
                 mlm_scores = None
                 mlm_loss = None
@@ -227,6 +228,7 @@ class RobertaForMultipleChoiceForPreTrain(RobertaPreTrainedModel, LogMixin, ABC)
                 acc, true_label_num = layers.get_accuracy(reshaped_logits, labels)
                 self.eval_metrics.update("acc", val=acc, n=true_label_num)
                 self.eval_metrics.update("loss", val=loss.item(), n=true_label_num)
+                self.eval_metrics.update("cls_loss", val=cls_loss.item(), n=true_label_num)
 
                 if mlm_labels is not None:
                     acc, true_label_num = layers.get_accuracy(mlm_scores, mlm_labels)
