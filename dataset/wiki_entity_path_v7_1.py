@@ -11,8 +11,8 @@ from torch.distributions.geometric import Geometric
 from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
-from datasets.data_utils import get_all_permutation
-from datasets.wiki_entity_path_v5 import WikiPathDatasetV5
+from dataset.data_utils import get_all_permutation
+from dataset.wiki_entity_path_v5 import WikiPathDatasetV5
 from general_util.logger import get_child_logger
 
 """
@@ -23,11 +23,9 @@ Version 7.0:
     1. Prior to use the examples from the same item.
 Version 7.1:
     1. Fix some minors.
-Version 7.2:
-    1.  Fix a bug at Line
 """
 
-logger = get_child_logger("Wiki.Entity.Path.V7.2")
+logger = get_child_logger("Wiki.Entity.Path.V7.0")
 
 _entity_pool: Dict
 _negative_pool: Dict
@@ -406,8 +404,7 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
             # Other positive candidates
             mutual_samples = [candi for candi_idx, candi in enumerate(item["pos"]) if candi_idx != pos_idx]
             for neg in mutual_samples:
-                # _rep_res = switch_replace_neg(pos_candi, neg, rep_pairs=None)
-                _rep_res = switch_replace_neg(pos_candi, neg, rep_pairs=_cur_aug_rep_pairs)
+                _rep_res = switch_replace_neg(pos_candi, neg, rep_pairs=None)
                 if len(_rep_res) > 0:
                     neg_res.extend(_rep_res)
             _pos_aug += len(neg_res)
@@ -591,7 +588,7 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
     tokenizer_name = tokenizer_name.replace('Tokenizer', '').lower()
 
     file_suffix = f"{tokenizer_name}_{shuffle_context}_{max_neg_num}_{aug_num}_" \
-                  f"{max_seq_length}_{geo_p}_{min_rep_num}_path_v7_2"
+                  f"{max_seq_length}_{geo_p}_{min_rep_num}_path_v7_1"
     cached_file_path = f"{file_path}_{file_suffix}"
     if os.path.exists(cached_file_path):
         logger.info(f"Loading cached file from {cached_file_path}")

@@ -11,7 +11,7 @@ from torch.distributions.geometric import Geometric
 from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
-from datasets.wiki_entity_path_v5 import WikiPathDatasetV5
+from dataset.wiki_entity_path_v5 import WikiPathDatasetV5
 from general_util.logger import get_child_logger
 
 """

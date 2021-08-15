@@ -4,6 +4,7 @@ from collections import Counter
 from functools import partial
 from multiprocessing import Pool
 from typing import Dict, List
+from copy import deepcopy
 
 import torch
 from nltk import sent_tokenize
@@ -11,13 +12,25 @@ from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 from transformers.tokenization_utils_base import PaddingStrategy, TruncationStrategy
 
-from datasets.data_utils import get_sep_tokens, is_bpe
+from dataset.data_utils import get_sep_tokens, is_bpe
 from general_util.logger import get_child_logger
 
 logger = get_child_logger("ReClor.Sentence")
 
 
-def read_examples(file_path: str):
+def replace_phrase_with_mask(text: str, phrase: str, tokenizer: PreTrainedTokenizer, mask_all: bool = False, use_unk: bool = False):
+    rep_token = tokenizer.mask_token if not use_unk else tokenizer.unk_token
+    idx = text.find(phrase)
+    assert idx != -1, (text, phrase)
+    if mask_all:
+        pass
+    else:
+        num_tokens = len(tokenizer.tokenize(phrase))
+        mask = " ".join([tokenizer.mask_token] * num_tokens)
+        return text[:idx] + mask + text[(idx + len(phrase)):]
+
+
+def read_examples(file_path: str, tokenizer: PreTrainedTokenizer):
     data = json.load(open(file_path, 'r'))
 
     examples = []
@@ -34,6 +47,39 @@ def read_examples(file_path: str):
             "options": sample["answers"],
             "label": _label
         })
+        gt_id = len(examples) - 1
+        if 'mask_phrase' in sample:
+            context_phrase = sample['mask_phrase'][0]
+            answer_phrase = sample['mask_phrase'][1]
+            options = deepcopy(sample["answers"])
+            options[_label] = replace_phrase_with_mask(options[_label], answer_phrase, tokenizer)
+
+            if 'mask_ops' in sample:
+                for op_id, _phrase in sample['mask_ops']:
+                    assert op_id != _label
+                    options[op_id] = replace_phrase_with_mask(options[op_id], _phrase, tokenizer)
+
+            examples.append({
+                "context": replace_phrase_with_mask(_context, context_phrase, tokenizer),
+                "question": _question,
+                "options": options,
+                "label": _label,
+                "gt_id": gt_id
+            })
+        elif 'mask_ops' in sample:
+            for context_np, op_ops in sample['mask_ops']:
+                mask_context = replace_phrase_with_mask(_context, context_np, tokenizer)
+                options = deepcopy(sample["answers"])
+                # print(op_ops)
+                for op_id, op_np in op_ops:
+                    options[op_id] = replace_phrase_with_mask(options[op_id], op_np, tokenizer)
+                examples.append({
+                    "context": mask_context,
+                    "question": _question,
+                    "options": options,
+                    "label": _label,
+                    "gt_id": gt_id
+                })
 
     logger.info(f"{len(examples)} examples are loaded from {file_path}.")
     return examples
@@ -45,16 +91,7 @@ def _convert_example_to_features(example: Dict, tokenizer: PreTrainedTokenizer, 
     context_sentences = [sent for sent in sent_tokenize(context) if sent]
 
     context_tokens = []
-    # It seems the arg is not supported in transformers==4.5.1
-    # if is_bpe(tokenizer):
-    #     specific_args = {"add_prefix_space": True}
-    # else:
-    #     specific_args = {}
     for _sent_id, _sent in enumerate(context_sentences):
-        # if _sent_id > 0:
-        #     _sent_tokens = tokenizer.tokenize(_sent, **specific_args)
-        # else:
-        #     _sent_tokens = tokenizer.tokenize(_sent)
         if is_bpe(tokenizer):
             _sent = " " + _sent
         _sent_tokens = tokenizer.tokenize(_sent)
@@ -116,13 +153,19 @@ def _convert_example_to_features(example: Dict, tokenizer: PreTrainedTokenizer, 
             "token_type_ids": tokenizer_outputs["token_type_ids"] if "token_type_ids" in tokenizer_outputs else None,
             "sentence_spans": sent_spans,
         })
+    if "gt_id" in example:
+        return {
+            "features": features,
+            "label": example["label"],
+            "gt_id": example["gt_id"]
+        }
     return {
         "features": features,
         "label": example["label"]
     }
 
 
-def _data_to_tensors(features: List[Dict]):
+def _data_to_tensors(features: List[Dict], add_mlm: bool = False):
     data_num = len(features)
     option_num = len(features[0]["features"])
     assert option_num == 4
@@ -149,25 +192,43 @@ def _data_to_tensors(features: List[Dict]):
             f_op_sent_num = len(op)
             sentence_spans[f_id, op_id, :f_op_sent_num] = torch.tensor(op, dtype=torch.long)
 
+    # Generate MLM labels
+    mlm_labels = torch.zeros(input_ids.size(), dtype=torch.long).fill_(-1)
+    for f_id, f in enumerate(features):
+        if "gt_id" in f:
+            assert f["gt_id"] < f_id
+            for op_id, op_input_ids in enumerate(input_ids[f_id]):
+                op_mlm_mask = op_input_ids != input_ids[f["gt_id"], op_id]
+                if op_mlm_mask.sum().item() >= 20:
+                    logger.info("Inconsistency found. Continue")
+                    continue
+                mlm_labels[f_id, op_id] = input_ids[f["gt_id"], op_id].masked_fill(~op_mlm_mask, -1)
+
     if token_type_ids is not None:
-        return input_ids, attention_mask, token_type_ids, labels, sentence_spans
+        res = (input_ids, attention_mask, token_type_ids, labels, sentence_spans,)
     else:
-        return input_ids, attention_mask, labels, sentence_spans
+        res = (input_ids, attention_mask, labels, sentence_spans,)
+
+    if add_mlm:
+        res = res + (mlm_labels,)
+
+    return res
 
 
-def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenizer, max_seq_length: int, num_workers: int = 16):
+def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenizer, max_seq_length: int, add_mlm: bool = False,
+                                   num_workers: int = 16):
     tokenizer_name = tokenizer.__class__.__name__
     tokenizer_name = tokenizer_name.replace('TokenizerFast', '')
     tokenizer_name = tokenizer_name.replace('Tokenizer', '').lower()
 
-    file_suffix = f"{tokenizer_name}_{max_seq_length}"
+    file_suffix = f"{tokenizer_name}_{max_seq_length}_{'w_mlm_' if add_mlm else ''}mask"
     cached_file_path = f"{file_path}_{file_suffix}"
     if os.path.exists(cached_file_path):
         logger.info(f"Loading cached file from {cached_file_path}")
         examples, features, tensors = torch.load(cached_file_path)
         return examples, features, tensors
 
-    examples = read_examples(file_path)
+    examples = read_examples(file_path, tokenizer)
 
     with Pool(num_workers) as p:
         _annotate = partial(_convert_example_to_features, tokenizer=tokenizer, max_seq_length=max_seq_length)
@@ -178,7 +239,7 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
         ))
 
     logger.info("Transform features into tensors...")
-    tensors = _data_to_tensors(features)
+    tensors = _data_to_tensors(features, add_mlm=add_mlm)
 
     logger.info(f"Saving processed features into {cached_file_path}.")
     torch.save((examples, features, tensors), cached_file_path)
