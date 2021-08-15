@@ -29,9 +29,6 @@ from typing import Dict, Union
 import hydra
 import numpy as np
 import torch
-from fairscale.nn.data_parallel.fully_sharded_data_parallel import FullyShardedDataParallel as FullyShardedDDP
-from fairscale.nn.wrap.auto_wrap import auto_wrap
-from fairscale.optim.grad_scaler import ShardedGradScaler
 from omegaconf import DictConfig, OmegaConf
 from torch import distributed as dist
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset)
@@ -50,19 +47,20 @@ except ImportError:
 logger: logging.Logger
 
 
-def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
+def save_model(model: Union[torch.nn.Module], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
     # Save model checkpoint.
-    if cfg.local_rank != -1:
-        state_dict = model.state_dict()
-        if cfg.local_rank == 0:
-            unwrap_model(model).save_pretrained(output_dir, state_dict=state_dict)
-    else:
-        model.save_pretrained(output_dir)
+    # if cfg.local_rank != -1:
+    #     state_dict = model.state_dict()
+    #     if cfg.local_rank == 0:
+    #         unwrap_model(model).save_pretrained(output_dir, state_dict=state_dict)
+    # else:
+    #     model.save_pretrained(output_dir)
 
     # Save tokenizer and training args.
     if cfg.local_rank in [-1, 0]:
         if tokenizer is not None:
             tokenizer.save_pretrained(output_dir)
+        model.save_pretrained(output_dir)
         OmegaConf.save(cfg, os.path.join(output_dir, "training_config.yaml"))
         logger.info("Saving model checkpoint to %s", output_dir)
 
@@ -89,7 +87,7 @@ def forward_step(model, inputs: Dict[str, torch.Tensor], cfg, scaler):
     return loss.item()
 
 
-def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_step=0):
+def train(cfg, train_dataset, model, tokenizer, continue_from_global_step=0):
     """ Train the model """
     if cfg.local_rank in [-1, 0]:
         _dir_splits = cfg.output_dir.split('/')
@@ -116,26 +114,19 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
 
     num_warmup_steps = int(t_total * cfg.warmup_proportion) if cfg.warmup_proportion else cfg.warmup_steps
 
-    optimizer = scheduler = None
     # Prepare optimizer and schedule (linear warmup and decay)
-    if cfg.local_rank == -1:
-        no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-             'weight_decay': cfg.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
-             'weight_decay': 0.0}
-        ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
+    no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+         'weight_decay': cfg.weight_decay},
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+         'weight_decay': 0.0}
+    ]
 
     if cfg.fp16:
-        if cfg.local_rank != -1:
-            scaler = ShardedGradScaler()
-        else:
-            from torch.cuda.amp.grad_scaler import GradScaler
+        from torch.cuda.amp.grad_scaler import GradScaler
 
-            scaler = GradScaler()
+        scaler = GradScaler()
     else:
         scaler = None
 
@@ -146,22 +137,24 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
 
     # Distributed training (should be after apex fp16 initialization)
     if cfg.local_rank != -1:
-        model = auto_wrap(model)
-        model = FullyShardedDDP(model,
-                                mixed_precision=cfg.fp16,
-                                reshard_after_forward=cfg.reshard_after_forward,
-                                cpu_offload=cfg.cpu_offload,
-                                move_grads_to_cpu=cfg.move_grads_to_cpu)
-        # move_params_to_cpu=cfg.move_params_to_cpu).to(cfg.device)
-        if not cfg.cpu_offload:
-            model = model.to(cfg.device)
 
-        no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': cfg.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[cfg.local_rank], output_device=cfg.local_rank, find_unused_parameters=True
+        )
+
+        from torch.distributed.optim import ZeroRedundancyOptimizer
+
+        optimizer = ZeroRedundancyOptimizer(
+            optimizer_grouped_parameters,
+            optimizer_class=AdamW,
+            parameters_as_bucket_view=True,
+            lr=cfg.learning_rate,
+            eps=cfg.adam_epsilon,
+            betas=eval(cfg.adam_betas)
+        )
+        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
+    else:
+        optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
 
     logger.info(optimizer)
@@ -244,12 +237,6 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
                     output_dir = os.path.join(cfg.output_dir, 'checkpoint-{}'.format(global_step))
                     if cfg.local_rank in [-1, 0] and not os.path.exists(output_dir):
                         os.makedirs(output_dir)
-                    # save_model(model, cfg, output_dir)
-                    # if cfg.local_rank in [-1, 0]:
-                    #     tokenizer.save_pretrained(output_dir)
-                    #     torch.save(cfg, os.path.join(output_dir, 'training_args.bin'))
-                    #     logger.info("Saving model checkpoint to %s", output_dir)
-                    #     torch.cuda.empty_cache()
                     save_model(model, cfg, output_dir, tokenizer)
 
                 # Evaluation
@@ -300,7 +287,7 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
         with torch.no_grad():
             outputs = model(**batch)
             # logits = outputs["logits"].detach().cpu()
-            probs = outputs["logits"].softmax(dim=-1).detach().float().cpu()
+            probs = outputs["logits"].softmax(dim=-1).detach().cpu()
             prob, pred = probs.max(dim=-1)
             pred_list.extend(pred.tolist())
             prob_list.extend(prob.tolist())
@@ -376,8 +363,8 @@ def main(cfg: DictConfig):
     if cfg.local_rank == 0:
         dist.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
-    if cfg.local_rank == -1:  # For FullyShardedDDP, place the model on cpu first.
-        model.to(cfg.device)
+    # if cfg.local_rank == -1:  # For FullyShardedDDP, place the model on cpu first.
+    model.to(cfg.device)
 
     # logger.info("Training/evaluation parameters %s", OmegaConf.to_yaml(cfg))
     if cfg.local_rank in [-1, 0] and cfg.do_train:
@@ -401,8 +388,8 @@ def main(cfg: DictConfig):
         #         model = model_class.from_pretrained(checkpoint)
         #         model.to(args.device)
 
-        train_dataset, features = load_and_cache_examples(cfg, tokenizer, _split="train")
-        global_step, tr_loss = train(cfg, train_dataset, features, model, tokenizer, continue_from_global_step)
+        train_dataset, _ = load_and_cache_examples(cfg, tokenizer, _split="train")
+        global_step, tr_loss = train(cfg, train_dataset, model, tokenizer, continue_from_global_step)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
     # Save the trained model and the tokenizer

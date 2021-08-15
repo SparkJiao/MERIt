@@ -3,12 +3,25 @@
 
 ## Experimental Results
 
+### ReClor
+
 |   base-model |       Pre-train       | bs/gpu * gpu_num | lr   | epoch | Val Acc. | Test Acc. | path |
 | :----------: | --------------------- | ---------------- | ---- | ----- | -------- | --------- | ---- |
-| RoBERTa-base |  ---                  | 24 * 1           | 2e-5 |   10  |  53.0    | 48.5*     | roberta.base.2.0 |
-|              |  ERICA                | 24 * 1           | 1e-5 |   10  |  54.8    | 49.3      | roberta.base.erica.ep.rp.1.0 |
-|              |  wiki-path-v4.0 + MLM | 24 * 1           | 2e-5 |   10  |  56.2    | 51.0      | roberta.base.wiki_erica_path_v4_0.2.0_cp500.1.0.2080Ti |
+| RoBERTa-base |  ---                  | 24 * 1           | 2e-5 |   10  |  53.0    |  48.5*    | roberta.base.2.0 |
+|              |  ERICA                | 24 * 1           | 1e-5 |   10  |  54.8    |  49.3     | roberta.base.erica.ep.rp.1.0 |
+|              |  wiki-path-v4.0 + MLM | 24 * 1           | 2e-5 |   10  |  56.2    |  51.0     | roberta.base.wiki_erica_path_v4_0.2.0_cp500.1.0.2080Ti |
+| RoBERTa-large|  ---                  | 24 * 1           | 1e-5 |   10  |  64.0    |  55.6     | roberta.large.2.0 |
+|              |  wiki-path-v8.1 + MLM | 6 * 4            | 1e-5 |   10  |**67.8**  |**61.5**   | roberta.large.wiki_erica_path_v8.1.1.2080ti-cp500.2.0.w4.2080Ti |
+|              |                       | 6 * 4            | 1e-5 |   10  |  67.4    |  61.2     | roberta.large.wiki_erica_path_v8.1.1.2080ti-cp500.4.0.w4.2080Ti (Re-use the head of pre-training) |
+| DAGN         |  RoBERTa-large        | 16 * 1           | 5e-6 |   10  |  64.8    |           |   |
+|              |  wiki-path-v8.1 + MLM | 16 * 1           | 5e-6 |   10  |          |           |   |
 
+### LogiQA
+
+|   base-model |       Pre-train       | bs/gpu * gpu_num | lr   | epoch | Val Acc. | Test Acc. | path |
+| :----------: | --------------------- | ---------------- | ---- | ----- | -------- | --------- | ---- |
+| RoBERTa-large|  ---                  | 24 * 1           | 5e-6 |   10  |  34.25   |  34.25    | logiqa.roberta.large.2080ti.w3.v2.1 |
+|              | wiki-path-v8.1 + MLM  | 24 * 1           | 5e-6 |   10  |  41.01   |  36.25    | logiqa.roberta.large.wiki_erica_path_v8.1.1.2080ti-cp500.w3.v2.1 |
 
 ## Progress
 
