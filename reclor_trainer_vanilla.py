@@ -31,10 +31,11 @@ import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf
 from torch import distributed as dist
+from torch.optim import AdamW
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
-from transformers import (AdamW, get_linear_schedule_with_warmup, AutoTokenizer, PreTrainedTokenizer)
+from transformers import (get_linear_schedule_with_warmup, AutoTokenizer, PreTrainedTokenizer)
 
 from general_util.logger import setting_logger
 from general_util.training_utils import batch_to_device, unwrap_model, set_seed
@@ -145,13 +146,15 @@ def train(cfg, train_dataset, model, tokenizer, continue_from_global_step=0):
         from torch.distributed.optim import ZeroRedundancyOptimizer
 
         optimizer = ZeroRedundancyOptimizer(
-            optimizer_grouped_parameters,
+            model.parameters(),
             optimizer_class=AdamW,
             parameters_as_bucket_view=True,
             lr=cfg.learning_rate,
             eps=cfg.adam_epsilon,
             betas=eval(cfg.adam_betas)
         )
+        optimizer.add_param_group(optimizer_grouped_parameters[0])
+        optimizer.add_param_group(optimizer_grouped_parameters[1])
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
     else:
         optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))

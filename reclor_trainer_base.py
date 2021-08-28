@@ -106,7 +106,7 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
                                   prefetch_factor=cfg.prefetch_factor)
 
     if "extended_vocab" in cfg and cfg.extended_vocab:
-        model.resize_token_embeddings(hydra.utils.call(cfg.extended_vocab))
+        model.resize_token_embeddings(model.config.vocab_size + cfg.extended_vocab)
 
     if cfg.max_steps > 0:
         t_total = cfg.max_steps
@@ -121,10 +121,14 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
     if cfg.local_rank == -1:
         no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
         optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-             'weight_decay': cfg.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
-             'weight_decay': 0.0}
+            {
+                'params': [p for n, p in model.named_parameters() if (not any(nd in n for nd in no_decay)) and p.requires_grad],
+                'weight_decay': cfg.weight_decay
+            },
+            {
+                'params': [p for n, p in model.named_parameters() if (any(nd in n for nd in no_decay)) and p.requires_grad],
+                'weight_decay': 0.0
+            }
         ]
         optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
@@ -158,8 +162,14 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
 
         no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
         optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': cfg.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            {
+                'params': [p for n, p in model.named_parameters() if (not any(nd in n for nd in no_decay)) and p.requires_grad],
+                'weight_decay': cfg.weight_decay
+            },
+            {
+                'params': [p for n, p in model.named_parameters() if (any(nd in n for nd in no_decay)) and p.requires_grad],
+                'weight_decay': 0.0
+            }
         ]
         optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon)
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)

@@ -1,6 +1,6 @@
 import copy
 
-from transformers import PreTrainedTokenizer
+from transformers import PreTrainedTokenizer, RobertaTokenizer, RobertaTokenizerFast
 from typing import List, Set
 
 
@@ -13,6 +13,16 @@ def is_bpe(_tokenizer: PreTrainedTokenizer):
         "LongformerTokenizerFast",
         "BartTokenizerFast",
     ]
+
+
+def get_unused_tokens(_tokenizer: PreTrainedTokenizer, token_num: int = 4):
+    if isinstance(_tokenizer, RobertaTokenizer) or isinstance(_tokenizer, RobertaTokenizerFast):
+        _unused_token = "<unused{}>"
+        _unused_tokens = []
+        for i in range(token_num):
+            _unused_tokens.append(_unused_token.format(str(i)))
+        _tokenizer.add_tokens(_unused_tokens)
+        return _unused_tokens
 
 
 def get_sep_tokens(_tokenizer: PreTrainedTokenizer):
