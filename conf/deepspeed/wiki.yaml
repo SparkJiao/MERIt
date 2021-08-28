@@ -38,7 +38,7 @@ prefetch_factor: 2
 model_name_or_path: pretrained-models/roberta-large
 pretrain:
 
-output_dir: experiments/roberta.large.wiki_erica_path_v6_0.1.0.TeslaT4
+output_dir: experiments/roberta.large.wiki_erica_path_v6_0.1.0.2080Ti.ds
 
 do_train: True
 evaluate_during_training: True
