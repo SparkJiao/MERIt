@@ -26,9 +26,11 @@ Version 7.1:
     1.  Fix some minors.
 Version 8.0:
     1.  Add replacement of context sentence.
+Version 8.1:
+    1.  Randomly sample negative samples instead of sampling sequentially.
 """
 
-logger = get_child_logger("Wiki.Entity.Path.V8.0")
+logger = get_child_logger("Wiki.Entity.Path.V8.1")
 
 _entity_pool: Dict
 _negative_pool: Dict
@@ -36,6 +38,7 @@ _all_neg_candidates: Dict
 _geometric_dist: torch.distributions.Distribution
 
 _permutation_sample_num: int = 6
+MAX_NEG_SAMPLE_NUM: int = 10
 
 
 def _switch_replace_neg(candidate, h_ent_id, h_ent_str, t_ent_id, t_ent_str, rep_pairs: Dict[int, str] = None):
@@ -46,7 +49,7 @@ def _switch_replace_neg(candidate, h_ent_id, h_ent_str, t_ent_id, t_ent_str, rep
 
     non_target_ent_ids = [ent_id for ent_id in entities if ent_id not in [h_ent_id, t_ent_id]]
     h_t_ent_ids = [h_ent_id, t_ent_id]
-    # assert h_ent_id in entities and t_ent_id in entities  # FIXME: Comment this line if ``random_ht == True``
+    assert h_ent_id in entities and t_ent_id in entities
 
     str_map = {
         h_ent_id: h_ent_str,
@@ -84,10 +87,7 @@ def _switch_replace_neg(candidate, h_ent_id, h_ent_str, t_ent_id, t_ent_str, rep
             _same_n = 0
             for _src, _tgt in zip(_source, _perm):
                 _rep_pairs_copy[_src] = rep_pairs[_tgt] if _tgt in rep_pairs else str_map[_tgt]
-                # if _rep_pairs_copy[_src].lower() == str_map[_src].lower() or _rep_pairs_copy[_src].lower() in ent_name_set[_src]:
-                # FIXME: This is used when ``random_ht == True``
-                if _src in str_map and _src in ent_name_set and (
-                        _rep_pairs_copy[_src].lower() == str_map[_src].lower() or _rep_pairs_copy[_src].lower() in ent_name_set[_src]):
+                if _rep_pairs_copy[_src].lower() == str_map[_src].lower() or _rep_pairs_copy[_src].lower() in ent_name_set[_src]:
                     _same_n += 1
             if _same_n == len(_source):
                 continue
@@ -124,7 +124,7 @@ def replace_ent_neg_double(candidate, h_ent_id, h_ent_str, t_ent_id, t_ent_str, 
         for _tmp in [h_ent_id, t_ent_id]:
             if _tmp in entities:
                 h_t_entities.append(_tmp)
-        # assert len(h_t_entities) < 2, (candidate["ent"], (h_ent_str, t_ent_str))  # FIXME: Comment this line if ``random_ht == True``
+        assert len(h_t_entities) < 2, (candidate["ent"], (h_ent_str, t_ent_str))
 
     if len(filtered_entities) == 0:
         return []
@@ -288,8 +288,7 @@ def _initializer(entity_pool: Dict, negative_pool: Dict, all_neg_candidates: Lis
     _geometric_dist = geometric_dist
 
 
-def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int, shuffle_context: bool,
-                         random_ex: bool = False, random_ht: bool = False):
+def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int, shuffle_context: bool, random_ex: bool = False):
     examples = []
     context_examples = []
 
@@ -316,56 +315,6 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
                 _tmp_sent["h"] = _random_h
                 _tmp_sent["t"] = _random_t
             _new_selected_sentences[_tmp_key] = _tmp_sent
-        assert len(_new_selected_sentences) == len(item["selected_sentences"]) and len(_all_sentences) == len(item["rest_sentences"])
-        item["selected_sentences"] = _new_selected_sentences
-        item["rest_sentences"] = _all_sentences
-
-    if random_ht:
-        _orig_pos = item["pos"]
-        _pos_num = len(item["pos"])
-        _all_sentences = {}
-        for _o_pos in _orig_pos:
-            sent_id = list(list(_o_pos["ent"].values())[0].values())[0]["sent_id"]
-            _all_sentences[sent_id] = _o_pos
-
-        path_len = len(item["selected_sentences"])
-        _all_sentences.update(item["selected_sentences"])
-        _all_sentences.update(item["rest_sentences"])
-        _new_selected_sentences = {}
-        _pos_candidate_keys = []
-        assert len(_all_sentences) == len(item["selected_sentences"]) + len(item["rest_sentences"]) + len(item["pos"])
-
-        for _tmp_key in _all_sentences:
-            _tmp_sent = _all_sentences[_tmp_key]
-            # if "h" not in _tmp_sent:  # Change the h and t entity randomly.
-            if len(_tmp_sent["ent"]) >= 2:
-                _random_h = random.choice(list(_tmp_sent["ent"].keys()))
-                _random_t = random.choice(list(_tmp_sent["ent"].keys()))
-            elif len(_tmp_sent["ent"]) >= 1:
-                _random_h = random.choice(list(_tmp_sent["ent"].keys()))
-                _random_t = -1
-            else:
-                _random_h = _random_t = -1
-            _tmp_sent["h"] = _random_h
-            _tmp_sent["t"] = _random_t
-            _all_sentences[_tmp_key] = _tmp_sent
-
-            if _tmp_sent["h"] != -1 and _tmp_sent["t"] != -1:
-                _pos_candidate_keys.append(_tmp_key)
-
-        assert len(_pos_candidate_keys) >= _pos_num, (len(_pos_candidate_keys), _pos_num)
-        _new_pos_keys = random.sample(_pos_candidate_keys, _pos_num)
-        _new_pos = []
-        for _new_pos_key in _new_pos_keys:
-            _new_pos.append(_all_sentences.pop(_new_pos_key))
-
-        item["pos"] = _new_pos
-
-        while len(_new_selected_sentences) < path_len:
-            _tmp_key = random.choice(list(_all_sentences.keys()))
-            _tmp_sent = _all_sentences.pop(_tmp_key)
-            _new_selected_sentences[_tmp_key] = _tmp_sent
-
         assert len(_new_selected_sentences) == len(item["selected_sentences"]) and len(_all_sentences) == len(item["rest_sentences"])
         item["selected_sentences"] = _new_selected_sentences
         item["rest_sentences"] = _all_sentences
@@ -400,14 +349,14 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
             _rep_res = replace_neg(pos_candi, neg, rep_pairs=None)
             if _rep_res:
                 neg_res.extend(_rep_res)
-            if len(neg_res) >= max_neg_num:
+            if len(neg_res) >= MAX_NEG_SAMPLE_NUM:
                 break
         _res_aug += max(len(neg_res) - _pos_aug, 0)
 
-        if len(neg_res) > max_neg_num:
-            neg_res = neg_res[:max_neg_num]
+        # if len(neg_res) > max_neg_num:
+        #     neg_res = neg_res[:max_neg_num]
 
-        while len(neg_res) < max_neg_num:
+        while len(neg_res) < MAX_NEG_SAMPLE_NUM:
             neg_data_item_id = random.choice(list(_all_neg_candidates.keys()))
             while neg_data_item_id == item["id"]:
                 neg_data_item_id = random.choice(list(_all_neg_candidates.keys()))
@@ -417,16 +366,17 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
             if _rep_res:
                 neg_res.extend(_rep_res)
 
-        if len(neg_res) > max_neg_num:
-            neg_res = neg_res[:max_neg_num]
-
-        assert len(neg_res) == max_neg_num
-
         _sim_aug = max(len(neg_res) - _res_aug - _pos_aug, 0)
+
+        # if len(neg_res) > max_neg_num:
+        #     neg_res = neg_res[:max_neg_num]
+
+        # assert len(neg_res) == max_neg_num
+        assert len(neg_res) >= max_neg_num
 
         examples.append({
             "context": context,
-            "negative": neg_res,
+            "negative": random.sample(neg_res, max_neg_num),
             "positive": " ".join(pos_candi["sent"]),
             "orig_id": item["id"],
             "pos_aug_num": _pos_aug,
@@ -448,18 +398,18 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
             _rep_res, _rep_flag = context_replace_neg(tgt_ctx_sent, neg, rep_pairs=None, out_of_domain=False)
 
             if _rep_res:
-                _left_num = min(max_neg_num, len(_rep_res))
+                _left_num = min(MAX_NEG_SAMPLE_NUM, len(_rep_res))
                 neg_ctx_sent.extend(_rep_res[:_left_num])
                 if _rep_flag == 0:
                     _ctx_pos_aug += _left_num
                 else:
                     _ctx_res_aug += _left_num
 
-            if len(neg_ctx_sent) >= max_neg_num:
-                neg_ctx_sent = neg_ctx_sent[:max_neg_num]
+            if len(neg_ctx_sent) >= MAX_NEG_SAMPLE_NUM:
+                neg_ctx_sent = neg_ctx_sent[:MAX_NEG_SAMPLE_NUM]
                 break
 
-        while len(neg_ctx_sent) < max_neg_num:
+        while len(neg_ctx_sent) < MAX_NEG_SAMPLE_NUM:
             neg_data_item_id = random.choice(list(_all_neg_candidates.keys()))
             while neg_data_item_id == item["id"]:
                 neg_data_item_id = random.choice(list(_all_neg_candidates.keys()))
@@ -468,9 +418,12 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
             # _rep_res = replace_neg(tgt_ctx_sent, neg, rep_pairs=None, out_of_domain=True)
             _rep_res, _ = context_replace_neg(tgt_ctx_sent, neg, rep_pairs=None, out_of_domain=True)
             if _rep_res:
-                _left_num = max_neg_num - len(neg_ctx_sent)
+                _left_num = MAX_NEG_SAMPLE_NUM - len(neg_ctx_sent)
                 neg_ctx_sent.extend(_rep_res[:_left_num])
                 _ctx_sim_aug += min(_left_num, len(_rep_res))
+
+        assert len(neg_ctx_sent) >= max_neg_num
+        neg_ctx_sent = random.sample(neg_ctx_sent, max_neg_num)
 
         context_examples.append({
             "context": context,
@@ -490,45 +443,18 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
     # 4. Replace the target entity in negative samples with the sampled entity.
 
     # Gather the entity ids in the meta-path for sampling.
-    # if random_ht:
-        # path_ent_ids = set()
-        # for _s in item["selected_sentences"]:
-        #     if _s["h"] != -1:
-        #         path_ent_ids.add(_s["h"])
-        #     if _s["t"] != -1:
-        #         path_ent_ids.add(_s["t"])
-        # FIXME: ``h_t_ent_ids`` is generated for each ``pos`` if ``random_ht == True``
-        # pass  # move to the internal iteration.
-    # else:
-    if not random_ht:
-        path_ent_ids = set([p_ent_id for p_ent_id, p_sent_id in item["path"]])
-        h_t_ent_ids = [item["pos"][0]["h"], item["pos"][0]["t"]]
-        for x in h_t_ent_ids:
-            assert x in path_ent_ids
-            path_ent_ids.remove(x)
+    path_ent_ids = set([p_ent_id for p_ent_id, p_sent_id in item["path"]])
+    h_t_ent_ids = [item["pos"][0]["h"], item["pos"][0]["t"]]
+    for x in h_t_ent_ids:
+        assert x in path_ent_ids
+        path_ent_ids.remove(x)
 
-        _h_str = get_ent_str(item["pos"][0], h_t_ent_ids[0])
-        _t_str = get_ent_str(item["pos"][0], h_t_ent_ids[1])
+    _h_str = get_ent_str(item["pos"][0], h_t_ent_ids[0])
+    _t_str = get_ent_str(item["pos"][0], h_t_ent_ids[1])
 
     for _ in range(aug_num):  # Repeat for augmentation
 
         for pos_idx, pos_candi in enumerate(item["pos"]):
-
-            if random_ht:
-                path_ent_ids = set()
-                for _s in item["selected_sentences"].values():
-                    if _s["h"] != -1:
-                        path_ent_ids.add(_s["h"])
-                    if _s["t"] != -1:
-                        path_ent_ids.add(_s["t"])
-
-                h_t_ent_ids = [pos_candi["h"], pos_candi["t"]]
-                _h_str = get_ent_str(pos_candi, pos_candi["h"])
-                _t_str = get_ent_str(pos_candi, pos_candi["t"])
-                for x in h_t_ent_ids:
-                    if x in path_ent_ids:
-                        path_ent_ids.remove(x)
-
             # Sample the amount of entities to be replaced from the geometric distribution.
             if min_rep_num >= len(path_ent_ids) + len(h_t_ent_ids):
                 _sampled_ent_num = len(path_ent_ids) + len(h_t_ent_ids)
@@ -600,36 +526,36 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
                 _rep_res = replace_neg(pos_candi, neg, rep_pairs=_cur_aug_rep_pairs)
                 if _rep_res:
                     neg_res.extend(_rep_res)
-                if len(neg_res) >= max_neg_num:
+                if len(neg_res) >= MAX_NEG_SAMPLE_NUM:
                     break
             _res_aug += max(len(neg_res) - _pos_aug, 0)
 
-            if len(neg_res) > max_neg_num:
-                neg_res = neg_res[:max_neg_num]
+            if len(neg_res) > MAX_NEG_SAMPLE_NUM:
+                neg_res = neg_res[:MAX_NEG_SAMPLE_NUM]
 
             # Add simple negative samples from the positive samples of the sampled data item.
-            if len(neg_res) < max_neg_num:
+            if len(neg_res) < MAX_NEG_SAMPLE_NUM:
                 for neg in sampled_neg_candidates:
                     # Add the sampled negative candidate since it contains the replaced head/tail entity already.
                     _rep_res = " ".join(neg["sent"])
                     neg_res.append(_rep_res)
-                    if len(neg_res) >= max_neg_num:
+                    if len(neg_res) >= MAX_NEG_SAMPLE_NUM:
                         break
 
             # Add simple negative samples from the ``rest_sentences`` from the sampled data item.
-            if len(neg_res) < max_neg_num:
+            if len(neg_res) < MAX_NEG_SAMPLE_NUM:
                 for neg in _all_neg_candidates[_sampled_neg_item_key]:
                     _rep_res = replace_neg(sampled_neg_candidates[0], neg, rep_pairs=None, out_of_domain=False)
                     if _rep_res:
                         neg_res.extend(_rep_res)
-                    if len(neg_res) >= max_neg_num:
+                    if len(neg_res) >= MAX_NEG_SAMPLE_NUM:
                         break
 
-            if len(neg_res) > max_neg_num:
-                neg_res = neg_res[:max_neg_num]
+            # if len(neg_res) > max_neg_num:
+            #     neg_res = neg_res[:max_neg_num]
 
             # Add simple negative samples for padding
-            while len(neg_res) < max_neg_num:
+            while len(neg_res) < MAX_NEG_SAMPLE_NUM:
                 neg_data_item_id = random.choice(list(_all_neg_candidates.keys()))
                 while neg_data_item_id == item["id"] or neg_data_item_id == _sampled_neg_item_key:
                     neg_data_item_id = random.choice(list(_all_neg_candidates.keys()))
@@ -639,10 +565,12 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
                 if _rep_res:
                     neg_res.extend(_rep_res)
 
-            if len(neg_res) > max_neg_num:
-                neg_res = neg_res[:max_neg_num]
-
             _sim_aug += max(len(neg_res) - _pos_aug - _res_aug, 0)
+
+            # if len(neg_res) > max_neg_num:
+            #     neg_res = neg_res[:max_neg_num]
+            assert len(neg_res) >= MAX_NEG_SAMPLE_NUM
+            neg_res = random.sample(neg_res, max_neg_num)
 
             if shuffle_context:
                 random.shuffle(new_sentences)
@@ -676,31 +604,31 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
                 _rep_res, _rep_flag = context_replace_neg(tgt_ctx_sent, neg, rep_pairs=_cur_aug_rep_pairs, out_of_domain=False)
 
                 if _rep_res:
-                    _left_num = min(max_neg_num, len(_rep_res))
+                    _left_num = min(MAX_NEG_SAMPLE_NUM, len(_rep_res))
                     neg_ctx_sent.extend(_rep_res[:_left_num])
                     if _rep_flag == 0:
                         _ctx_pos_aug += _left_num
                     else:
                         _ctx_res_aug += _left_num
 
-                if len(neg_ctx_sent) >= max_neg_num:
-                    neg_ctx_sent = neg_ctx_sent[:max_neg_num]
+                if len(neg_ctx_sent) >= MAX_NEG_SAMPLE_NUM:
+                    neg_ctx_sent = neg_ctx_sent[:MAX_NEG_SAMPLE_NUM]
                     break
 
-            if len(neg_ctx_sent) < max_neg_num:
+            if len(neg_ctx_sent) < MAX_NEG_SAMPLE_NUM:
                 for neg in sampled_neg_candidates + _all_neg_candidates[_sampled_neg_item_key]:
                     _rep_res, _ = context_replace_neg(tgt_ctx_sent, neg, rep_pairs=None, out_of_domain=True)
 
                     if _rep_res:
-                        _left_num = min(max_neg_num, len(_rep_res))
+                        _left_num = min(MAX_NEG_SAMPLE_NUM, len(_rep_res))
                         neg_ctx_sent.extend(_rep_res[:_left_num])
                         _ctx_sim_aug += _left_num
 
-                    if len(neg_ctx_sent) >= max_neg_num:
-                        neg_ctx_sent = neg_ctx_sent[:max_neg_num]
+                    if len(neg_ctx_sent) >= MAX_NEG_SAMPLE_NUM:
+                        neg_ctx_sent = neg_ctx_sent[:MAX_NEG_SAMPLE_NUM]
                         break
 
-            while len(neg_ctx_sent) < max_neg_num:
+            while len(neg_ctx_sent) < MAX_NEG_SAMPLE_NUM:
                 neg_data_item_id = random.choice(list(_all_neg_candidates.keys()))
                 while neg_data_item_id == item["id"]:
                     neg_data_item_id = random.choice(list(_all_neg_candidates.keys()))
@@ -708,11 +636,12 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
 
                 _rep_res, _ = context_replace_neg(tgt_ctx_sent, neg, rep_pairs=None, out_of_domain=True)
                 if _rep_res:
-                    _left_num = max_neg_num - len(neg_ctx_sent)
+                    _left_num = MAX_NEG_SAMPLE_NUM - len(neg_ctx_sent)
                     neg_ctx_sent.extend(_rep_res[:_left_num])
                     _ctx_sim_aug += min(_left_num, len(_rep_res))
 
-            assert len(neg_ctx_sent) == max_neg_num
+            assert len(neg_ctx_sent) >= MAX_NEG_SAMPLE_NUM
+            neg_ctx_sent = random.sample(neg_ctx_sent, max_neg_num)
 
             # To avoid shuffling, re-generate the new sentences
             new_sentences = dict()
@@ -748,7 +677,7 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
 
 def read_examples(file_path: str, shuffle_context: bool = False,
                   max_neg_num: int = 3, aug_num: int = 10,
-                  geo_p: float = 0.5, min_rep_num: int = 1, random_ex: bool = False, random_ht: bool = False,
+                  geo_p: float = 0.5, min_rep_num: int = 1, random_ex: bool = False,
                   num_workers: int = 48):
     logger.info(f"Loading raw examples from {file_path}...")
     # raw_data = json.load(open(file_path, 'r'))
@@ -815,7 +744,7 @@ def read_examples(file_path: str, shuffle_context: bool = False,
     with Pool(num_workers, initializer=_initializer, initargs=(entity_pool, negative_pool, all_neg_candidates, geometric_dist)) as p:
         _annotate = partial(_process_single_item,
                             max_neg_num=max_neg_num, aug_num=aug_num, min_rep_num=min_rep_num, shuffle_context=shuffle_context,
-                            random_ex=random_ex, random_ht=random_ht)
+                            random_ex=random_ex)
         _results = list(tqdm(
             p.imap(_annotate, data, chunksize=32),
             total=len(data),
@@ -872,17 +801,15 @@ def read_examples(file_path: str, shuffle_context: bool = False,
 def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenizer,
                                    shuffle_context: bool = False, max_neg_num: int = 3, aug_num: int = 10,
                                    max_seq_length: int = 512, geo_p: float = 0.5, min_rep_num: int = 1, random_ex: bool = False,
-                                   random_ht: bool = False, num_workers=48):
+                                   num_workers=48):
     tokenizer_name = tokenizer.__class__.__name__
     tokenizer_name = tokenizer_name.replace('TokenizerFast', '')
     tokenizer_name = tokenizer_name.replace('Tokenizer', '').lower()
 
     file_suffix = f"{tokenizer_name}_{shuffle_context}_{max_neg_num}_{aug_num}_" \
-                  f"{max_seq_length}_{geo_p}_{min_rep_num}_path_v8_0"
+                  f"{max_seq_length}_{geo_p}_{min_rep_num}_path_v8_1"
     if random_ex:
         file_suffix = file_suffix + "_random_exp"
-    if random_ht:
-        file_suffix = file_suffix + "_random_ht"
     cached_file_path = f"{file_path}_{file_suffix}"
     if os.path.exists(cached_file_path):
         logger.info(f"Loading cached file from {cached_file_path}")
@@ -892,7 +819,7 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
 
     examples, context_examples, raw_texts = read_examples(file_path, shuffle_context=shuffle_context, max_neg_num=max_neg_num,
                                                           aug_num=aug_num, geo_p=geo_p, min_rep_num=min_rep_num, random_ex=random_ex,
-                                                          random_ht=random_ht, num_workers=num_workers)
+                                                          num_workers=num_workers)
     all_examples = examples + context_examples
 
     # Save
@@ -900,83 +827,3 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
     torch.save((all_examples, raw_texts), cached_file_path)
 
     return all_examples, None, WikiPathDatasetV5(all_examples, raw_texts)
-
-
-class WikiPathDatasetCollatorWithContext(WikiPathDatasetCollator):
-    def __init__(self, max_seq_length: int, tokenizer: str, mlm_probability: float = 0.15, max_option_num: int = 4, swap: bool = False):
-        super().__init__(max_seq_length, tokenizer, mlm_probability, max_option_num)
-        self.swap = swap
-
-    def __call__(self, batch):
-        # examples, texts = list(zip(*batch))
-        op_examples, ctx_examples, texts = [], [], []
-        for b in batch:
-            example = b.pop("example")
-            if "negative_context" in example:
-                ctx_examples.append(example)
-            else:
-                op_examples.append(example)
-            # examples.append(b.pop("example"))
-            texts.append(b.pop("text"))
-            # assert isinstance(texts[-1], str), texts[-1]
-        del batch
-        batch_size = len(op_examples) + len(ctx_examples)
-        assert batch_size == len(texts)
-
-        # TODO: Check if other possible input formats are ok, e.g., <rest context> <sep> <pseudo/ground truth edge> <sep> <sep> <option>
-
-        input_a = []
-        input_b = []
-        option_num = -1
-
-        for e in op_examples:
-            op = ([e["positive"]] + e["negative"])[:self.max_option_num]
-            if self.swap:
-                input_a.extend([e["context"]] * len(op))
-                input_b.extend(op)
-            else:
-                input_a.extend(op)
-                input_b.extend([e["context"]] * len(op))
-            if option_num == -1:
-                option_num = len(op)
-            else:
-                assert option_num == len(op)
-
-        for e in ctx_examples:
-            positive_context = e.pop("context")
-            negative_context = e.pop("negative_context")
-            op = e.pop("condition")
-            input_a.extend([positive_context] + negative_context)
-            input_b.extend([op] * (len(negative_context) + 1))
-            if option_num == -1:
-                option_num = len(negative_context) + 1
-            else:
-                assert option_num == len(negative_context) + 1, (option_num, len(negative_context))
-
-        option_num = min(option_num, self.max_option_num)
-
-        tokenizer_outputs = self.tokenizer(input_a, input_b, padding=PaddingStrategy.MAX_LENGTH,
-                                           truncation=TruncationStrategy.LONGEST_FIRST, max_length=self.max_seq_length,
-                                           return_tensors="pt")
-        input_ids = tokenizer_outputs["input_ids"]
-        attention_mask = tokenizer_outputs["attention_mask"]
-
-        mlm_tokenize_outputs = self.tokenizer(texts, padding=PaddingStrategy.MAX_LENGTH,
-                                              truncation=TruncationStrategy.LONGEST_FIRST, max_length=self.max_seq_length,
-                                              return_tensors="pt")
-        mlm_input_ids = mlm_tokenize_outputs["input_ids"]
-        mlm_attention_mask = mlm_tokenize_outputs["attention_mask"]
-
-        mlm_input_ids, mlm_labels = self.mask_tokens(mlm_input_ids)
-
-        res = {
-            "input_ids": input_ids.reshape(batch_size, option_num, self.max_seq_length),
-            "attention_mask": attention_mask.reshape(batch_size, option_num, self.max_seq_length),
-            "labels": torch.zeros(batch_size, dtype=torch.long),
-            "mlm_input_ids": mlm_input_ids,
-            "mlm_attention_mask": mlm_attention_mask,
-            "mlm_labels": mlm_labels
-        }
-        if "token_type_ids" in tokenizer_outputs:
-            res["token_type_ids"] = tokenizer_outputs["token_type_ids"]
-        return res

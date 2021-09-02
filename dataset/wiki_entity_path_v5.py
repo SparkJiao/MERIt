@@ -535,7 +535,7 @@ class WikiPathDatasetV5(Dataset):
 class WikiPathDatasetCollator:
     def __init__(self, max_seq_length: int, tokenizer: str, mlm_probability: float = 0.15, max_option_num: int = 4):
         self.max_seq_length = max_seq_length
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer, use_fast=False)
         self.mlm_probability = mlm_probability
         self.max_option_num = max_option_num
 
