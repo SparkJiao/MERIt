@@ -278,49 +278,52 @@ def context_replace_neg(context_sent, neg_candidate, rep_pairs: Dict[int, str] =
     return _rep_res, flag
 
 
-def _initializer(entity_pool: Dict, negative_pool: Dict, all_neg_candidates: List, geometric_dist: torch.distributions.Distribution):
+def _initializer(entity_pool: Dict, negative_pool: Dict, all_neg_candidates: List, geometric_dist: torch.distributions.Distribution,
+                 max_neg_samples_num: int):
     global _entity_pool
     global _negative_pool
     global _all_neg_candidates
     global _geometric_dist
+    global MAX_NEG_SAMPLE_NUM
 
     _entity_pool = entity_pool
     _negative_pool = negative_pool
     _all_neg_candidates = all_neg_candidates
     _geometric_dist = geometric_dist
+    MAX_NEG_SAMPLE_NUM = max_neg_samples_num
 
 
-def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int, shuffle_context: bool, random_ex: bool = False,
+def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int, shuffle_context: bool,
                          deduct_ratio: float = 1.0, context_ratio: float = 1.0, remove_context: bool = False):
     examples = []
     context_examples = []
 
-    #  Random shuffling the path for ablation studies.
-    if random_ex:
-        path_len = len(item["selected_sentences"])
-        _all_sentences = {}
-        _all_sentences.update(item["selected_sentences"])
-        _all_sentences.update(item["rest_sentences"])
-        _new_selected_sentences = {}
-        assert len(_all_sentences) == len(item["selected_sentences"]) + len(item["rest_sentences"])
-        while len(_new_selected_sentences) < path_len:
-            _tmp_key = random.choice(list(_all_sentences.keys()))
-            _tmp_sent = _all_sentences.pop(_tmp_key)
-            if "h" not in _tmp_sent:
-                if len(_tmp_sent["ent"]) >= 2:
-                    _random_h = random.choice(list(_tmp_sent["ent"].keys()))
-                    _random_t = random.choice(list(_tmp_sent["ent"].keys()))
-                elif len(_tmp_sent["ent"]) >= 1:
-                    _random_h = random.choice(list(_tmp_sent["ent"].keys()))
-                    _random_t = -1
-                else:
-                    _random_h = _random_t = -1
-                _tmp_sent["h"] = _random_h
-                _tmp_sent["t"] = _random_t
-            _new_selected_sentences[_tmp_key] = _tmp_sent
-        assert len(_new_selected_sentences) == len(item["selected_sentences"]) and len(_all_sentences) == len(item["rest_sentences"])
-        item["selected_sentences"] = _new_selected_sentences
-        item["rest_sentences"] = _all_sentences
+    # #  Random shuffling the path for ablation studies.
+    # if random_ex:
+    #     path_len = len(item["selected_sentences"])
+    #     _all_sentences = {}
+    #     _all_sentences.update(item["selected_sentences"])
+    #     _all_sentences.update(item["rest_sentences"])
+    #     _new_selected_sentences = {}
+    #     assert len(_all_sentences) == len(item["selected_sentences"]) + len(item["rest_sentences"])
+    #     while len(_new_selected_sentences) < path_len:
+    #         _tmp_key = random.choice(list(_all_sentences.keys()))
+    #         _tmp_sent = _all_sentences.pop(_tmp_key)
+    #         if "h" not in _tmp_sent:
+    #             if len(_tmp_sent["ent"]) >= 2:
+    #                 _random_h = random.choice(list(_tmp_sent["ent"].keys()))
+    #                 _random_t = random.choice(list(_tmp_sent["ent"].keys()))
+    #             elif len(_tmp_sent["ent"]) >= 1:
+    #                 _random_h = random.choice(list(_tmp_sent["ent"].keys()))
+    #                 _random_t = -1
+    #             else:
+    #                 _random_h = _random_t = -1
+    #             _tmp_sent["h"] = _random_h
+    #             _tmp_sent["t"] = _random_t
+    #         _new_selected_sentences[_tmp_key] = _tmp_sent
+    #     assert len(_new_selected_sentences) == len(item["selected_sentences"]) and len(_all_sentences) == len(item["rest_sentences"])
+    #     item["selected_sentences"] = _new_selected_sentences
+    #     item["rest_sentences"] = _all_sentences
 
     selected_sentences = item["selected_sentences"]
     if len(selected_sentences) == 0:
@@ -468,7 +471,10 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
             if min_rep_num >= len(path_ent_ids) + len(h_t_ent_ids):
                 _sampled_ent_num = len(path_ent_ids) + len(h_t_ent_ids)
             else:
-                _sampled_ent_num = int(_geometric_dist.sample().item()) + min_rep_num
+                if _geometric_dist is not None:
+                    _sampled_ent_num = int(_geometric_dist.sample().item()) + min_rep_num
+                else:
+                    _sampled_ent_num = min_rep_num
                 cnt = 0
                 while _sampled_ent_num >= (len(path_ent_ids) + len(h_t_ent_ids)):
                     cnt += 1
@@ -696,16 +702,19 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
 
 def read_examples(file_path: str, shuffle_context: bool = False,
                   max_neg_num: int = 3, aug_num: int = 10,
-                  geo_p: float = 0.5, min_rep_num: int = 1, random_ex: bool = False,
+                  geo_p: float = 0.5, min_rep_num: int = 1,
                   deduct_ratio: float = 1.0, context_ratio: float = 1.0, remove_context: bool = False,
+                  max_neg_samples_num: int = 8,
                   num_workers: int = 48):
     logger.info(f"Loading raw examples from {file_path}...")
-    # raw_data = json.load(open(file_path, 'r'))
     raw_data = pickle.load(open(file_path, "rb"))
     data = raw_data["examples"]
     raw_texts = raw_data["raw_texts"]
 
-    geometric_dist = Geometric(torch.tensor([geo_p]))
+    if geo_p > 0:
+        geometric_dist = Geometric(torch.tensor([geo_p]))
+    else:
+        geometric_dist = None
 
     all_neg_candidates = {}
     negative_pool = {}
@@ -761,10 +770,11 @@ def read_examples(file_path: str, shuffle_context: bool = False,
 
     examples = []
     context_examples = []
-    with Pool(num_workers, initializer=_initializer, initargs=(entity_pool, negative_pool, all_neg_candidates, geometric_dist)) as p:
+    with Pool(num_workers, initializer=_initializer,
+              initargs=(entity_pool, negative_pool, all_neg_candidates, geometric_dist, max_neg_samples_num)) as p:
         _annotate = partial(_process_single_item,
                             max_neg_num=max_neg_num, aug_num=aug_num, min_rep_num=min_rep_num, shuffle_context=shuffle_context,
-                            random_ex=random_ex, deduct_ratio=deduct_ratio, context_ratio=context_ratio, remove_context=remove_context)
+                            deduct_ratio=deduct_ratio, context_ratio=context_ratio, remove_context=remove_context)
         _results = list(tqdm(
             p.imap(_annotate, data, chunksize=32),
             total=len(data),
@@ -830,19 +840,17 @@ def read_examples(file_path: str, shuffle_context: bool = False,
 
 def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenizer,
                                    shuffle_context: bool = False, max_neg_num: int = 3, aug_num: int = 10,
-                                   max_seq_length: int = 512, geo_p: float = 0.5, min_rep_num: int = 1, random_ex: bool = False,
+                                   max_seq_length: int = 512, geo_p: float = 0.5, min_rep_num: int = 1,
                                    deduct_ratio: float = 1.0, context_ratio: float = 1.0, remove_context: bool = False,
-                                   num_workers=48):
+                                   max_neg_samples_num: int = 8, num_workers=48):
     tokenizer_name = tokenizer.__class__.__name__
     tokenizer_name = tokenizer_name.replace('TokenizerFast', '')
     tokenizer_name = tokenizer_name.replace('Tokenizer', '').lower()
 
     file_suffix = f"{tokenizer_name}_{shuffle_context}_{max_neg_num}_{aug_num}_" \
                   f"{max_seq_length}_{geo_p}_{min_rep_num}_" \
-                  f"{deduct_ratio}_{context_ratio}_{'' if not remove_context else 'no-ctx-ex_'}path_v8_2"
+                  f"{deduct_ratio}_{context_ratio}_{max_neg_samples_num}_{'' if not remove_context else 'no-ctx-ex_'}path_v8_2"
 
-    if random_ex:
-        file_suffix = file_suffix + "_random_exp"
     cached_file_path = f"{file_path}_{file_suffix}"
     if os.path.exists(cached_file_path):
         logger.info(f"Loading cached file from {cached_file_path}")
@@ -851,9 +859,10 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
         return all_examples, None, dataset
 
     examples, context_examples, raw_texts = read_examples(file_path, shuffle_context=shuffle_context, max_neg_num=max_neg_num,
-                                                          aug_num=aug_num, geo_p=geo_p, min_rep_num=min_rep_num, random_ex=random_ex,
+                                                          aug_num=aug_num, geo_p=geo_p, min_rep_num=min_rep_num,
                                                           deduct_ratio=deduct_ratio, context_ratio=context_ratio,
-                                                          remove_context=remove_context, num_workers=num_workers)
+                                                          remove_context=remove_context, max_neg_samples_num=max_neg_samples_num,
+                                                          num_workers=num_workers)
     all_examples = examples + context_examples
 
     # Save

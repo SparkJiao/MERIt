@@ -106,6 +106,7 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
                                   prefetch_factor=cfg.prefetch_factor)
 
     if "extended_vocab" in cfg and cfg.extended_vocab:
+        logger.info(f"Extended extra vocab size: {cfg.extended_vocab}")
         model.resize_token_embeddings(model.config.vocab_size + cfg.extended_vocab)
 
     if cfg.max_steps > 0:
@@ -240,7 +241,7 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
                     optimizer.step()
 
                 scheduler.step()  # Update learning rate schedule
-                model.zero_grad()
+                model.zero_grad(set_to_none=True)
                 global_step += 1
 
                 # Log metrics

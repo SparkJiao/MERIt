@@ -17,6 +17,7 @@
 | DAGN         |  RoBERTa-large        | 16 * 1           | 5e-6 |   10  |  64.8    |           |   |
 |              |  wiki-path-v8.1 + MLM | 16 * 1           | 5e-6 |   10  |          |           |   |
 
+Average: 67.4 60.5
 path-pt-v8-1-cp500-w4-2.0-p-tuning-tk10-s42: 67.40 58.60 76.59 44.46  
 path-pt-v8-1-cp500-w4-2.0-p-tuning-tk10-s43: 67.00 60.80 78.18 47.14  
 path-pt-v8-1-cp500-w4-2.0-p-tuning-tk10-s44: 67.80 60.50 76.59 47.86  
@@ -50,6 +51,20 @@ path-pt-v8-1-random-cp500-w4-5.0-s44: 68.0 60.50 76.82 47.68
 path-pt-v8-1-random-cp500-w4-5.0-s45: 67.0 61.60 77.50 49.11
 path-pt-v8-1-random-cp500-w4-5.0-s4321: 67.8 61.6 78.64 48.21
 
+Average: 60.1
+path-pt-v8-1-random-ht-cp500-w4-5.0-s42: 63.2 76.36 52.86
+path-pt-v8-1-random-ht-cp500-w4-5.0-s43: 58.3 76.14 44.28
+path-pt-v8-1-random-ht-cp500-w4-5.0-s44: 61.8 77.05 49.82
+path-pt-v8-1-random-ht-cp500-w4-5.0-s45: 59.4 78.18 44.648
+path-pt-v8-1-random-ht-cp500-w4-5.0-s4322: 57.60 79.09 40.71
+
+Average: 
+path-pt-v8-1-random-ht-no-aug-cp500-w4-5.0-s42: 55.7 74.09 41.25
+path-pt-v8-1-random-ht-no-aug-cp500-w4-5.0-s43: 59.1 76.14 45.71
+path-pt-v8-1-random-ht-no-aug-cp500-w4-5.0-s44: 58.4 76.82 43.93
+path-pt-v8-1-random-ht-no-aug-cp500-w4-5.0-s45: 58.6 75.91 45.00
+path-pt-v8-1-random-ht-no-aug-cp500-w4-5.0-s4322: 57.50 74.77 43.93
+
 Average: 66.28 58.92
 path-pt-v8-1-no_shuffling-cp500-w4-2.0-s42: 65.60 58.20 75.68 44.46
 path-pt-v8-1-no_shuffling-cp500-w4-2.0-s43: 65.40 59.50 76.14 46.43
@@ -63,6 +78,37 @@ path-pt-v8-1-no_shuffling-cp500-w4-5.0-s43: 68.00 56.90 74.32 43.21
 path-pt-v8-1-no_shuffling-cp500-w4-5.0-s44: 68.20 57.50 74.77 43.93
 path-pt-v8-1-no_shuffling-cp500-w4-5.0-s45: 68.00 59.10 78.64 43.75
 path-pt-v8-1-no_shuffling-cp500-w4-5.0-s4321: 65.40 58.8 77.73 43.93
+
+------
+
+Average: 66.8 59.6
+path-pt-v8-2-2-1aug-ctx-cp500-w4-2.0-s42: 66.80 60.30 77.50 46.79 s1800  
+path-pt-v8-2-2-1aug-ctx-cp500-w4-2.0-s43: 65.60 59.70 78.41 45.00 s1500  
+path-pt-v8-2-2-1aug-ctx-cp500-w4-2.0-s44: 66.00 58.00 77.05 43.04 s1000   
+path-pt-v8-2-2-1aug-ctx-cp500-w4-2.0-s45: 67.60 59.20 77.73 44.64 s1900  
+path-pt-v8-2-2-1aug-ctx-cp500-w4-2.0-s4321: 67.80 60.70 79.55 45.89 s1300
+
+Average 66.5
+path-pt-v8-2-2-1aug-ctx-cp500-w4-2.1-s42: 65.60  s1700  
+path-pt-v8-2-2-1aug-ctx-cp500-w4-2.1-s43: 65.00  s1100  
+path-pt-v8-2-2-1aug-ctx-cp500-w4-2.1-s44: 67.60  s1600   
+path-pt-v8-2-2-1aug-ctx-cp500-w4-2.1-s45: 67.80  s700  
+path-pt-v8-2-2-1aug-ctx-cp500-w4-2.1-s4321: 66.60  s1500
+
+Average: 67.9 60.3
+path-pt-v8-2-2-1aug-ctx-cp500-w4-5.0-s42: 66.20 60.70 78.41 46.79 s1300
+path-pt-v8-2-2-1aug-ctx-cp500-w4-5.0-s43: 66.60 58.20 74.55 45.36 s800
+path-pt-v8-2-2-1aug-ctx-cp500-w4-5.0-s44: 67.20 60.80 77.50 47.68 s1200
+path-pt-v8-2-2-1aug-ctx-cp500-w4-5.0-s45: 67.80 60.80 79.09 46.43 s1000
+path-pt-v8-2-2-1aug-ctx-cp500-w4-5.0-s4321: 71.60 60.80 78.41 46.96 s1500
+
+Average: 
+path-pt-v8-2-2-1aug-ctx-cp500-w4-5.1-s42: 66.80 60.70 78.41 46.79 s1000
+path-pt-v8-2-2-1aug-ctx-cp500-w4-5.1-s43: 69.80 58.20 74.55 45.36 s1000
+path-pt-v8-2-2-1aug-ctx-cp500-w4-5.1-s44: 68.80 60.80 77.50 47.68 s900
+path-pt-v8-2-2-1aug-ctx-cp500-w4-5.1-s45: 67.80 60.80 79.09 46.43 s1000
+path-pt-v8-2-2-1aug-ctx-cp500-w4-5.1-s4321: 71.60 60.80 78.41 46.96 s1500
+
 
 ### LogiQA
 

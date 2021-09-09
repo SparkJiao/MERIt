@@ -134,3 +134,5 @@ dmypy.json
 # Experimental files
 log_dir/*
 experiments/*
+pretrain-data/*
+pretrained-models/*

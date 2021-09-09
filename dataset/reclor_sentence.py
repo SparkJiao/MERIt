@@ -125,7 +125,8 @@ def _convert_example_to_features(example: Dict, tokenizer: PreTrainedTokenizer, 
 def _data_to_tensors(features: List[Dict]):
     data_num = len(features)
     option_num = len(features[0]["features"])
-    assert option_num == 4
+    # assert option_num == 4
+    # option_num = max(map(lambda x: len(x["features"]), features))
     max_seq_length = len(features[0]["features"][0]["input_ids"])
 
     input_ids = torch.tensor([[op["input_ids"] for op in f["features"]] for f in features])
