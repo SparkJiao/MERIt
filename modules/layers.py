@@ -26,6 +26,16 @@ def extract_sent_tokens(source: Tensor, sentence_index: Tensor, sent_token_mask:
     return gather_tokens, union_mask
 
 
+def keep_grad_prompt(input_embeds: Tensor, prompt_pos: Tensor):
+    kp_gradient_mask = input_embeds.new_zeros(input_embeds.size()[:-1])  # [batch, seq_len], the position to keep grad is set to ``1``.
+    kp_gradient_mask = torch.scatter(kp_gradient_mask, dim=1, index=prompt_pos, value=1.0)
+    kp_gradient_mask = kp_gradient_mask.unsqueeze(-1)
+
+    input_embeds_sg = input_embeds.detach()
+    input_embeds = kp_gradient_mask * input_embeds + (1 - kp_gradient_mask) * input_embeds_sg
+    return input_embeds
+
+
 def get_accuracy(logits: Tensor, labels: Tensor):
     assert logits.size()[:-1] == labels.size()
 

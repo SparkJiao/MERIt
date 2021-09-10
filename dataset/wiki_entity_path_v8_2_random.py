@@ -30,6 +30,8 @@ Version 8.1:
     1.  Randomly sample negative samples instead of sampling sequentially.
 Version 8.2:
     1.  Add hyper-parameters to control how much negative samples of each category to be involved in.
+Version 8.2.random:
+    1.  Add option to random shuffling the sentences and positive candidates. And the number of sentences are also re-determined.
 """
 
 logger = get_child_logger("Wiki.Entity.Path.V8.2")
@@ -293,11 +295,88 @@ def _initializer(entity_pool: Dict, negative_pool: Dict, all_neg_candidates: Lis
     MAX_NEG_SAMPLE_NUM = max_neg_samples_num
 
 
+def _count_target_ent(candi, h_id, t_id):
+    cnt = 0
+    if h_id in candi["ent"]:
+        cnt += 1
+    if t_id in candi["ent"]:
+        cnt += 1
+    return cnt
+
+
 def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int, shuffle_context: bool,
-                         deduct_ratio: float = 1.0, context_ratio: float = 1.0,
-                         remove_deduct: bool = False, remove_context: bool = False):
+                         deduct_ratio: float = 1.0, context_ratio: float = 1.0, remove_context: bool = False, keep_num: bool = False):
     examples = []
     context_examples = []
+
+    # ============================= Random Shuffling ================================
+    _all_sent_num = len(item["pos"]) + len(item["selected_sentences"]) + len(item["rest_sentences"])
+    _orig_pos = item["pos"]
+
+    if keep_num:
+        _pos_num = len(item["pos"])
+    else:
+        _pos_num = max(int(_all_sent_num * 0.1), 1)
+
+    _all_sentences = {}
+    for _o_pos in _orig_pos:
+        sent_id = list(list(_o_pos["ent"].values())[0].values())[0]["sent_id"]
+        _all_sentences[sent_id] = _o_pos
+
+    if keep_num:
+        path_len = len(item["selected_sentences"])
+    else:
+        path_len = int(len(item["selected_sentences"]) * 0.8)
+        assert path_len + _pos_num <= _all_sent_num
+
+    _all_sentences.update(item["selected_sentences"])
+    _all_sentences.update(item["rest_sentences"])
+    _new_selected_sentences = {}
+    _pos_candidate_keys = []
+    assert len(_all_sentences) == len(item["selected_sentences"]) + len(item["rest_sentences"]) + len(item["pos"])
+
+    for _tmp_key in _all_sentences:
+        _tmp_sent = _all_sentences[_tmp_key]
+        # if "h" not in _tmp_sent:  # Change the h and t entity randomly.
+        if len(_tmp_sent["ent"]) >= 2:
+            _random_h = random.choice(list(_tmp_sent["ent"].keys()))
+            _random_t = random.choice(list(_tmp_sent["ent"].keys()))
+        elif len(_tmp_sent["ent"]) >= 1:
+            _random_h = random.choice(list(_tmp_sent["ent"].keys()))
+            _random_t = -1
+        else:
+            _random_h = _random_t = -1
+        _tmp_sent["h"] = _random_h
+        _tmp_sent["t"] = _random_t
+        _all_sentences[_tmp_key] = _tmp_sent
+
+        if _tmp_sent["h"] != -1 and _tmp_sent["t"] != -1:
+            _pos_candidate_keys.append(_tmp_key)
+
+    if keep_num:
+        assert len(_pos_candidate_keys) >= _pos_num, (len(_pos_candidate_keys), _pos_num)
+    else:
+        _pos_num = min(_pos_num, len(item["pos"]))
+
+    _new_pos_keys = random.sample(_pos_candidate_keys, _pos_num)
+    _new_pos = []
+    for _new_pos_key in _new_pos_keys:
+        _new_pos.append(_all_sentences.pop(_new_pos_key))
+
+    item["pos"] = _new_pos
+
+    while len(_new_selected_sentences) < path_len:
+        _tmp_key = random.choice(list(_all_sentences.keys()))
+        _tmp_sent = _all_sentences.pop(_tmp_key)
+        _new_selected_sentences[_tmp_key] = _tmp_sent
+
+    if keep_num:
+        assert len(_new_selected_sentences) == len(item["selected_sentences"]) and len(_all_sentences) == len(item["rest_sentences"])
+
+    item["selected_sentences"] = _new_selected_sentences
+    item["rest_sentences"] = _all_sentences
+
+    # ======================================= Random shuffling end ===========================================
 
     selected_sentences = item["selected_sentences"]
     if len(selected_sentences) == 0:
@@ -306,7 +385,7 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
 
     path_sent2rep = [(s_id, s) for s_id, s in selected_sentences.items() if s["h"] != -1 and s["t"] != -1]
 
-    neg_candidates = [x for x in item["rest_sentences"].values() if len(x["ent"]) > 1]
+    # neg_candidates = [x for x in item["rest_sentences"].values() if len(x["ent"]) > 1]
 
     for pos_idx, pos_candi in enumerate(item["pos"]):
         # Statistics
@@ -316,8 +395,43 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
 
         neg_res = []
 
+        """
+        The difference between the workflow under random shuffling and the original one is that
+        we need to select the new negative candidates from ``item['pos']`` and ``item['rest_sentences']``
+        since the head/tail entity has been changed and we need to determine each sentence has exactly one or two head/tail entities.
+        """
+
+        # =======================================================
+        # Generate the pseudo negative samples from the other positive samples (have both target entities)
+        # and the simple sentences (have less than two target entities)
+        # ==========================================================
+        _cur_pos_h_id = pos_candi["h"]
+        _cur_pos_t_id = pos_candi["t"]
+
+        mutual_samples = []
+        neg_candidates = []
+        for candi_idx, candi in enumerate(item["pos"]):
+            if candi_idx != pos_idx:
+                _tar_cnt = _count_target_ent(candi, _cur_pos_h_id, _cur_pos_t_id)
+                if _tar_cnt == 2:
+                    mutual_samples.append(candi)
+                else:
+                    assert len(candi["ent"]) > 1
+                    neg_candidates.append(candi)
+        for candi in item["rest_sentences"].values():
+            _tar_cnt = _count_target_ent(candi, _cur_pos_h_id, _cur_pos_t_id)
+            if _tar_cnt == 2:
+                mutual_samples.append(candi)
+            else:
+                if len(candi["ent"]) > 1:
+                    neg_candidates.append(candi)
+
+        # ================================
+        # Generation end.
+        # =================================
+
         # Other positive candidates
-        mutual_samples = [candi for candi_idx, candi in enumerate(item["pos"]) if candi_idx != pos_idx]
+        # mutual_samples = [candi for candi_idx, candi in enumerate(item["pos"]) if candi_idx != pos_idx]
         for neg in mutual_samples:
             _rep_res = switch_replace_neg(pos_candi, neg, rep_pairs=None)
             if len(_rep_res) > 0:
@@ -348,7 +462,7 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
         assert len(neg_res) >= max_neg_num
 
         _r = random.random()
-        if not remove_deduct and _r < deduct_ratio:
+        if _r < deduct_ratio:
             examples.append({
                 "context": context,
                 "negative": random.sample(neg_res, max_neg_num),
@@ -423,24 +537,43 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
     # 3. Replace the target entity in the context with the sampled entity.
     # 4. Replace the target entity in negative samples with the sampled entity.
 
+    # Move this segment to internal iteration since the target entities for different pos candidate is also different.
     # Gather the entity ids in the meta-path for sampling.
-    path_ent_ids = set([p_ent_id for p_ent_id, p_sent_id in item["path"]])
-    h_t_ent_ids = [item["pos"][0]["h"], item["pos"][0]["t"]]
-    for x in h_t_ent_ids:
-        assert x in path_ent_ids
-        path_ent_ids.remove(x)
-    if "relation_connect_ent" in item:
-        for x in item["relation_connect_ent"]:
-            if x in h_t_ent_ids:
-                continue
-            path_ent_ids.remove(x)
+    # path_ent_ids = set([p_ent_id for p_ent_id, p_sent_id in item["path"]])
+    # h_t_ent_ids = [item["pos"][0]["h"], item["pos"][0]["t"]]
+    # for x in h_t_ent_ids:
+    #     assert x in path_ent_ids
+    #     path_ent_ids.remove(x)
 
-    _h_str = get_ent_str(item["pos"][0], h_t_ent_ids[0])
-    _t_str = get_ent_str(item["pos"][0], h_t_ent_ids[1])
+    # Comment this branch since we shouldn't use the meta-path.
+    # if "relation_connect_ent" in item:
+    #     for x in item["relation_connect_ent"]:
+    #         if x in h_t_ent_ids:
+    #             continue
+    #         path_ent_ids.remove(x)
+
+    # _h_str = get_ent_str(item["pos"][0], h_t_ent_ids[0])
+    # _t_str = get_ent_str(item["pos"][0], h_t_ent_ids[1])
 
     for _ in range(aug_num):  # Repeat for augmentation
 
         for pos_idx, pos_candi in enumerate(item["pos"]):
+
+            # The target entities are not sure included in the path since the meta-path is removed.
+            path_ent_ids = set()
+            for _s in item["selected_sentences"].values():
+                if _s["h"] != -1:
+                    path_ent_ids.add(_s["h"])
+                if _s["t"] != -1:
+                    path_ent_ids.add(_s["t"])
+
+            h_t_ent_ids = [pos_candi["h"], pos_candi["t"]]
+            _h_str = get_ent_str(pos_candi, pos_candi["h"])
+            _t_str = get_ent_str(pos_candi, pos_candi["t"])
+            for x in h_t_ent_ids:
+                if x in path_ent_ids:
+                    path_ent_ids.remove(x)
+
             # Sample the amount of entities to be replaced from the geometric distribution.
             if min_rep_num >= len(path_ent_ids) + len(h_t_ent_ids):
                 _sampled_ent_num = len(path_ent_ids) + len(h_t_ent_ids)
@@ -470,6 +603,7 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
 
             # ======================================================================== #
 
+            # 这里并不影响 random shuffling 的相关实现，因为替换的是 target entities 已经是被随机重新分配过的了
             _sampled_neg_item_key = random.choice(list(_negative_pool.keys()))
             while _sampled_neg_item_key == item["id"] or _sampled_neg_item_key not in _all_neg_candidates:
                 _sampled_neg_item_key = random.choice(list(_negative_pool.keys()))
@@ -495,6 +629,33 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
 
             new_pos_candi_sent = _replace_entities_w_str(pos_candi, _cur_aug_rep_pairs)
 
+            # =======================================================
+            # Generate the pseudo negative samples from the other positive samples (have both target entities)
+            # and the simple sentences (have less than two target entities)
+            # ==========================================================
+
+            mutual_samples = []
+            neg_candidates = []
+            for candi_idx, candi in enumerate(item["pos"]):
+                if candi_idx != pos_idx:
+                    _tar_cnt = _count_target_ent(candi, h_t_ent_ids[0], h_t_ent_ids[1])
+                    if _tar_cnt == 2:
+                        mutual_samples.append(candi)
+                    else:
+                        assert len(candi["ent"]) > 1
+                        neg_candidates.append(candi)
+            for candi in item["rest_sentences"].values():
+                _tar_cnt = _count_target_ent(candi, h_t_ent_ids[0], h_t_ent_ids[1])
+                if _tar_cnt == 2:
+                    mutual_samples.append(candi)
+                else:
+                    if len(candi["ent"]) > 1:
+                        neg_candidates.append(candi)
+
+            # ================================
+            # Generation end.
+            # =================================
+
             # Statistics
             _res_aug = 0
             _pos_aug = 0
@@ -503,7 +664,7 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
             neg_res = []
 
             # Other positive candidates
-            mutual_samples = [candi for candi_idx, candi in enumerate(item["pos"]) if candi_idx != pos_idx]
+            # mutual_samples = [candi for candi_idx, candi in enumerate(item["pos"]) if candi_idx != pos_idx]
             for neg in mutual_samples:
                 _rep_res = switch_replace_neg(pos_candi, neg, rep_pairs=None)
                 if len(_rep_res) > 0:
@@ -565,19 +726,18 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
                 random.shuffle(new_sentences)
             new_context = " ".join(new_sentences)
 
-            if not remove_deduct:
-                examples.append({
-                    "context": new_context,
-                    "negative": neg_res,
-                    "positive": new_pos_candi_sent,
-                    "orig_id": item["id"],
-                    "h": _cur_aug_rep_pairs[h_t_ent_ids[0]] if h_t_ent_ids[0] in _cur_aug_rep_pairs else _h_str,
-                    "t": _cur_aug_rep_pairs[h_t_ent_ids[1]] if h_t_ent_ids[1] in _cur_aug_rep_pairs else _t_str,
-                    "pos_aug_num": _pos_aug,
-                    "res_aug_num": _res_aug,
-                    "sim_aug_num": _sim_aug,
-                    "rep_ent_num": _sampled_ent_num
-                })
+            examples.append({
+                "context": new_context,
+                "negative": neg_res,
+                "positive": new_pos_candi_sent,
+                "orig_id": item["id"],
+                "h": _cur_aug_rep_pairs[h_t_ent_ids[0]] if h_t_ent_ids[0] in _cur_aug_rep_pairs else _h_str,
+                "t": _cur_aug_rep_pairs[h_t_ent_ids[1]] if h_t_ent_ids[1] in _cur_aug_rep_pairs else _t_str,
+                "pos_aug_num": _pos_aug,
+                "res_aug_num": _res_aug,
+                "sim_aug_num": _sim_aug,
+                "rep_ent_num": _sampled_ent_num
+            })
 
             # ============= context replaced-based examples ==================== #
             # TODO: Check这里的``rep_pairs``参数是否有问题
@@ -678,9 +838,8 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
 def read_examples(file_path: str, shuffle_context: bool = False,
                   max_neg_num: int = 3, aug_num: int = 10,
                   geo_p: float = 0.5, min_rep_num: int = 1,
-                  deduct_ratio: float = 1.0, context_ratio: float = 1.0,
-                  remove_deduct: bool = False, remove_context: bool = False,
-                  max_neg_samples_num: int = 8,
+                  deduct_ratio: float = 1.0, context_ratio: float = 1.0, remove_context: bool = False,
+                  max_neg_samples_num: int = 8, keep_num: bool = False,
                   num_workers: int = 48):
     logger.info(f"Loading raw examples from {file_path}...")
     raw_data = pickle.load(open(file_path, "rb"))
@@ -750,8 +909,7 @@ def read_examples(file_path: str, shuffle_context: bool = False,
               initargs=(entity_pool, negative_pool, all_neg_candidates, geometric_dist, max_neg_samples_num)) as p:
         _annotate = partial(_process_single_item,
                             max_neg_num=max_neg_num, aug_num=aug_num, min_rep_num=min_rep_num, shuffle_context=shuffle_context,
-                            deduct_ratio=deduct_ratio, context_ratio=context_ratio,
-                            remove_deduct=remove_deduct, remove_context=remove_context)
+                            deduct_ratio=deduct_ratio, context_ratio=context_ratio, remove_context=remove_context, keep_num=keep_num)
         _results = list(tqdm(
             p.imap(_annotate, data, chunksize=32),
             total=len(data),
@@ -766,6 +924,18 @@ def read_examples(file_path: str, shuffle_context: bool = False,
 
     logger.info(f"{len(examples)} examples are loaded from {file_path}.")
     logger.info(f"{len(context_examples)} context examples are loaded from {file_path}.")
+
+    _pos_num = 0
+    _rest_num = 0
+    _path_num = 0
+    for item in data:
+        _pos_num += len(item["pos"])
+        _rest_num += len(item["rest_sentences"])
+        _path_num += len(item["selected_sentences"])
+    logger.info(f"Random shuffling effect:")
+    logger.info(f"Average positive candidate num: {_pos_num * 1.0 / len(data)}")
+    logger.info(f"Average rest sentences num: {_rest_num * 1.0 / len(data)}")
+    logger.info(f"Average path sentences num: {_path_num * 1.0 / len(data)}")
 
     _pos_aug = 0
     _res_aug = 0
@@ -794,17 +964,15 @@ def read_examples(file_path: str, shuffle_context: bool = False,
         if "rep_ent_num" not in e:
             simple_ctx_num += 1
 
-    if len(examples) > 0:
-        logger.info(f"Augmentation statistics: ")
-        logger.info(f"Augmentation from positive candidates: {_pos_aug} || {_pos_aug * 1.0 / len(examples)}")
-        logger.info(f"Augmentation from rest sentences: {_res_aug} || {_res_aug * 1.0 / len(examples)}")
-        logger.info(f"Augmentation from simple sentences: {_sim_aug} || {_sim_aug * 1.0 / len(examples)}")
-        if _rep_aug_num:
-            logger.info(f"Averaged replaced entity num: {_rep_ent_num} / {_rep_aug_num} || {_rep_ent_num * 1.0 / _rep_aug_num}")
-        else:
-            logger.info(f"Averaged replaced entity num: [0].")
-        logger.info(f"Simple examples ratio over all examples: {simple_exp_num} / {len(examples)} = "
-                    f"{simple_exp_num * 1.0 / len(examples)}.")
+    logger.info(f"Augmentation statistics: ")
+    logger.info(f"Augmentation from positive candidates: {_pos_aug} || {_pos_aug * 1.0 / len(examples)}")
+    logger.info(f"Augmentation from rest sentences: {_res_aug} || {_res_aug * 1.0 / len(examples)}")
+    logger.info(f"Augmentation from simple sentences: {_sim_aug} || {_sim_aug * 1.0 / len(examples)}")
+    if _rep_aug_num:
+        logger.info(f"Averaged replaced entity num: {_rep_ent_num} / {_rep_aug_num} || {_rep_ent_num * 1.0 / _rep_aug_num}")
+    else:
+        logger.info(f"Averaged replaced entity num: [0].")
+    logger.info(f"Simple examples ratio over all examples: {simple_exp_num} / {len(examples)} = {simple_exp_num * 1.0 / len(examples)}.")
 
     if len(context_examples) > 0:
         logger.info(f"Context examples statistics: ")
@@ -820,17 +988,17 @@ def read_examples(file_path: str, shuffle_context: bool = False,
 def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenizer,
                                    shuffle_context: bool = False, max_neg_num: int = 3, aug_num: int = 10,
                                    max_seq_length: int = 512, geo_p: float = 0.5, min_rep_num: int = 1,
-                                   deduct_ratio: float = 1.0, context_ratio: float = 1.0,
-                                   remove_deduct: bool = False, remove_context: bool = False,
-                                   max_neg_samples_num: int = 8, num_workers=48):
+                                   deduct_ratio: float = 1.0, context_ratio: float = 1.0, remove_context: bool = False,
+                                   max_neg_samples_num: int = 8, keep_num: bool = False, num_workers=48):
     tokenizer_name = tokenizer.__class__.__name__
     tokenizer_name = tokenizer_name.replace('TokenizerFast', '')
     tokenizer_name = tokenizer_name.replace('Tokenizer', '').lower()
 
     file_suffix = f"{tokenizer_name}_{shuffle_context}_{max_neg_num}_{aug_num}_" \
                   f"{max_seq_length}_{geo_p}_{min_rep_num}_" \
-                  f"{deduct_ratio}_{context_ratio}_{max_neg_samples_num}_" \
-                  f"{'' if not remove_context else 'no-ctx-ex_'}{'' if not remove_deduct else 'no-duc-ex_'}path_v8_2"
+                  f"{deduct_ratio}_{context_ratio}_{max_neg_samples_num}_{keep_num}_{'' if not remove_context else 'no-ctx-ex_'}path_v8_2"
+
+    file_suffix = file_suffix + "_random_sf"
 
     cached_file_path = f"{file_path}_{file_suffix}"
     if os.path.exists(cached_file_path):
@@ -842,9 +1010,8 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
     examples, context_examples, raw_texts = read_examples(file_path, shuffle_context=shuffle_context, max_neg_num=max_neg_num,
                                                           aug_num=aug_num, geo_p=geo_p, min_rep_num=min_rep_num,
                                                           deduct_ratio=deduct_ratio, context_ratio=context_ratio,
-                                                          remove_deduct=remove_deduct, remove_context=remove_context,
-                                                          max_neg_samples_num=max_neg_samples_num,
-                                                          num_workers=num_workers)
+                                                          remove_context=remove_context, max_neg_samples_num=max_neg_samples_num,
+                                                          keep_num=keep_num, num_workers=num_workers)
     all_examples = examples + context_examples
 
     # Save

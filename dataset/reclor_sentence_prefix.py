@@ -55,6 +55,7 @@ def _convert_example_to_features(example: Dict, tokenizer: PreTrainedTokenizer, 
     question_tokens = [(_q_sent_id_offset, _tok) for _tok in tokenizer.tokenize(question)]
 
     unused_tokens = get_unused_tokens(tokenizer, token_num=token_num)
+    unused_token_ids = tokenizer.convert_tokens_to_ids(unused_tokens)
 
     pet_question_tokens = [(_q_sent_id_offset, tk) for tk in unused_tokens] + question_tokens
     max_seq_length += len(unused_tokens)
@@ -106,11 +107,17 @@ def _convert_example_to_features(example: Dict, tokenizer: PreTrainedTokenizer, 
                                       padding=PaddingStrategy.MAX_LENGTH,
                                       max_length=max_seq_length)
         assert len(tokenizer_outputs["input_ids"]) == max_seq_length, (len(c_tokens), len(q_op_tokens), len(tokenizer_outputs["input_ids"]))
+
+        prefix_pos_s = tokenizer_outputs["input_ids"].index(unused_token_ids[0])
+        prefix_pos_e = tokenizer_outputs["input_ids"].index(unused_token_ids[-1])  # assert ``unused_token_ids[-1] in ``input_ids``
+        prefix_pos = list(range(prefix_pos_s, prefix_pos_e + 1))
+
         features.append({
             "input_ids": tokenizer_outputs["input_ids"],
             "attention_mask": tokenizer_outputs["attention_mask"],
             "token_type_ids": tokenizer_outputs["token_type_ids"] if "token_type_ids" in tokenizer_outputs else None,
             "sentence_spans": sent_spans,
+            "prefix_pos": prefix_pos
         })
     return {
         "features": features,
@@ -118,7 +125,7 @@ def _convert_example_to_features(example: Dict, tokenizer: PreTrainedTokenizer, 
     }
 
 
-def _data_to_tensors(features: List[Dict]):
+def _data_to_tensors(features: List[Dict], add_prefix_pos: bool = False):
     data_num = len(features)
     option_num = len(features[0]["features"])
     assert option_num == 4
@@ -131,6 +138,7 @@ def _data_to_tensors(features: List[Dict]):
     else:
         token_type_ids = None
     labels = torch.tensor([f["label"] for f in features], dtype=torch.long)
+    prefix_pos = torch.tensor([[op["prefix_pos"] for op in f["features"]] for f in features], dtype=torch.long)
 
     # List[List[List[Tuple[int, int]]]]
     sentence_spans_ls = [[op["sentence_spans"] for op in f["features"]] for f in features]
@@ -146,18 +154,23 @@ def _data_to_tensors(features: List[Dict]):
             sentence_spans[f_id, op_id, :f_op_sent_num] = torch.tensor(op, dtype=torch.long)
 
     if token_type_ids is not None:
-        return input_ids, attention_mask, token_type_ids, labels, sentence_spans
+        res = input_ids, attention_mask, token_type_ids, labels, sentence_spans
     else:
-        return input_ids, attention_mask, labels, sentence_spans
+        res = input_ids, attention_mask, labels, sentence_spans
+
+    if add_prefix_pos:
+        res = res + (prefix_pos,)
+
+    return res
 
 
 def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenizer, max_seq_length: int,
-                                   token_num: int = 4, num_workers: int = 16):
+                                   token_num: int = 4, add_prefix_pos: bool = False, num_workers: int = 16):
     tokenizer_name = tokenizer.__class__.__name__
     tokenizer_name = tokenizer_name.replace('TokenizerFast', '')
     tokenizer_name = tokenizer_name.replace('Tokenizer', '').lower()
 
-    file_suffix = f"prefix_{token_num}_{tokenizer_name}_{max_seq_length}"
+    file_suffix = f"prefix_{token_num}_{tokenizer_name}_{max_seq_length}{'_w_pos' if add_prefix_pos else ''}"
     cached_file_path = f"{file_path}_{file_suffix}"
     if os.path.exists(cached_file_path):
         logger.info(f"Loading cached file from {cached_file_path}")
@@ -175,7 +188,7 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
         ))
 
     logger.info("Transform features into tensors...")
-    tensors = _data_to_tensors(features)
+    tensors = _data_to_tensors(features, add_prefix_pos=add_prefix_pos)
 
     logger.info(f"Saving processed features into {cached_file_path}.")
     torch.save((examples, features, tensors), cached_file_path)
