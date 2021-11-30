@@ -1,0 +1,88 @@
+hydra:
+  run:
+    dir: ./
+
+train_file: reclor_data/train.json
+dev_file: reclor_data/val.json
+test_file: reclor_data/test.json
+
+# Model
+model:
+  _target_: models.roberta_baseline.RobertaForMultipleChoice.from_pretrained
+  fs_checkpoint: False
+  fs_checkpoint_offload_to_cpu: False
+  fs_checkpoint_maintain_forward_counter: False
+
+# Data loading
+read_tensor:
+  _target_: dataset.reclor_sentence.convert_examples_into_features
+  max_seq_length: 256
+  num_workers: 2
+
+#extended_vocab: 4
+
+# Data collator
+collator:
+  _target_: dataset.collators.ReClorSentenceCollator
+
+# Dataloader
+num_workers: 4
+prefetch_factor: 2
+
+# Wiki path pretrain v8.2
+model_name_or_path: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.1aug.ctx.1k.2080Ti/checkpoint-500
+
+pretrain:
+
+output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.2.0.w4.2080Ti.s${seed}
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.2.1.w4.2080Ti.s${seed}
+# Step 400
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp400.2.0.w3.TeslaT4.s${seed}
+
+#do_train: True
+do_train: False
+evaluate_during_training: True
+
+#do_eval: False
+do_eval: True
+eval_sub_path: checkpoint-1300
+
+# Training hyper-parameters
+per_gpu_train_batch_size: 1
+per_gpu_eval_batch_size: 1
+#per_gpu_train_batch_size: 3
+#per_gpu_eval_batch_size: 3
+learning_rate: 1e-5
+#learning_rate: 8e-6
+gradient_accumulation_steps: 24
+weight_decay: 0.01
+adam_epsilon: 1e-6
+adam_betas: "(0.9, 0.98)"
+max_grad_norm: 0.0
+num_train_epochs: 10
+max_steps: 0
+warmup_proportion: 0.1
+warmup_steps: 0
+
+
+logging_steps: 5
+save_steps: 100
+eval_steps: 100
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O1
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: False
+cpu_offload: False
+move_grads_to_cpu: False
+move_params_to_cpu: False
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:
+world_size:

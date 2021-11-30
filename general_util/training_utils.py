@@ -1,5 +1,6 @@
 import random
 from typing import Dict
+from omegaconf import DictConfig
 
 import numpy as np
 import torch
@@ -35,3 +36,11 @@ def batch_to_device(batch: Dict[str, torch.Tensor], device):
     for k, v in batch.items():
         batch_on_device[k] = v.to(device)
     return batch_on_device
+
+
+def note_best_checkpoint(cfg: DictConfig, results: Dict[str, float], sub_path: str):
+    metric = results[cfg.prediction_cfg.metric]
+    if (not cfg.prediction_cfg.best_result) or (cfg.prediction_cfg.measure > 0 and metric > cfg.prediction_cfg.best_result) or (
+            cfg.prediction_cfg.measure < 0 and metric < cfg.prediction_cfg.best_result):
+        cfg.prediction_cfg.best_result = metric
+        cfg.prediction_cfg.best_checkpoint = sub_path

@@ -305,6 +305,7 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                     # Evaluation
                     if cfg.evaluate_during_training and cfg.eval_steps > 0 and global_step % cfg.eval_steps == 0:
                         if cfg.local_rank in [-1, 0]:
+                            # if cfg.local_rank == -1 or dist.get_rank() == 0:
                             results = evaluate(cfg, model, tokenizer, prefix=str(global_step), _split="dev")
                             for key, value in results.items():
                                 tb_writer.add_scalar(f"eval/{key}", value, global_step)
@@ -347,6 +348,7 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
     single_model_gpu = unwrap_model(model)
     single_model_gpu.get_eval_log(reset=True)
     # Eval!
+    torch.cuda.empty_cache()
     logger.info("***** Running evaluation {}.{} *****".format(_split, prefix))
     logger.info("  Num examples = %d", len(dataset))
     logger.info("  Batch size = %d", cfg.eval_batch_size)

@@ -505,7 +505,9 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
             # Other positive candidates
             mutual_samples = [candi for candi_idx, candi in enumerate(item["pos"]) if candi_idx != pos_idx]
             for neg in mutual_samples:
-                _rep_res = switch_replace_neg(pos_candi, neg, rep_pairs=None)
+                # FIXME: 这里的 ``rep_pairs`` 参数应该是 ``_cur_aug_rep_pairs`` 吗？
+                # _rep_res = switch_replace_neg(pos_candi, neg, rep_pairs=None)  # roberta-large
+                _rep_res = switch_replace_neg(pos_candi, neg, rep_pairs=_cur_aug_rep_pairs)  # albert-xx-large-v2 in server 220.
                 if len(_rep_res) > 0:
                     neg_res.extend(_rep_res)
             _pos_aug += len(neg_res)

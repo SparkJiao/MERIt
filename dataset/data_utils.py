@@ -1,6 +1,7 @@
 import copy
 
-from transformers import PreTrainedTokenizer, RobertaTokenizer, RobertaTokenizerFast
+from transformers import PreTrainedTokenizer, RobertaTokenizer, RobertaTokenizerFast, AlbertTokenizer, AlbertTokenizerFast
+from transformers.models.albert.tokenization_albert import AlbertTokenizer
 from typing import List, Set
 
 
@@ -18,6 +19,13 @@ def is_bpe(_tokenizer: PreTrainedTokenizer):
 def get_unused_tokens(_tokenizer: PreTrainedTokenizer, token_num: int = 4):
     if isinstance(_tokenizer, RobertaTokenizer) or isinstance(_tokenizer, RobertaTokenizerFast):
         _unused_token = "<unused{}>"
+        _unused_tokens = []
+        for i in range(token_num):
+            _unused_tokens.append(_unused_token.format(str(i)))
+        _tokenizer.add_tokens(_unused_tokens)
+        return _unused_tokens
+    elif isinstance(_tokenizer, AlbertTokenizer) or isinstance(_tokenizer, AlbertTokenizerFast):
+        _unused_token = "[unused{}]"
         _unused_tokens = []
         for i in range(token_num):
             _unused_tokens.append(_unused_token.format(str(i)))

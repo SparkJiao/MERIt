@@ -34,7 +34,7 @@ Version 8.2.random:
     1.  Add option to random shuffling the sentences and positive candidates. And the number of sentences are also re-determined.
 """
 
-logger = get_child_logger("Wiki.Entity.Path.V8.2")
+logger = get_child_logger("Wiki.Entity.Path.V8.2.random")
 
 _entity_pool: Dict
 _negative_pool: Dict
@@ -305,18 +305,20 @@ def _count_target_ent(candi, h_id, t_id):
 
 
 def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int, shuffle_context: bool,
-                         deduct_ratio: float = 1.0, context_ratio: float = 1.0, remove_context: bool = False, keep_num: bool = False):
+                         deduct_ratio: float = 1.0, context_ratio: float = 1.0, remove_context: bool = False, keep_num: bool = False,
+                         pos_ratio: float = 0.1, path_ratio: float = 0.8):
     examples = []
     context_examples = []
 
     # ============================= Random Shuffling ================================
     _all_sent_num = len(item["pos"]) + len(item["selected_sentences"]) + len(item["rest_sentences"])
     _orig_pos = item["pos"]
+    assert _all_sent_num > 0
 
     if keep_num:
         _pos_num = len(item["pos"])
     else:
-        _pos_num = max(int(_all_sent_num * 0.1), 1)
+        _pos_num = max(int(_all_sent_num * pos_ratio), 1)
 
     _all_sentences = {}
     for _o_pos in _orig_pos:
@@ -326,7 +328,10 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
     if keep_num:
         path_len = len(item["selected_sentences"])
     else:
-        path_len = int(len(item["selected_sentences"]) * 0.8)
+        path_len = int(_all_sent_num * path_ratio)
+        # assert path_len > 0
+        if path_len == 0:
+            return [], []
         assert path_len + _pos_num <= _all_sent_num
 
     _all_sentences.update(item["selected_sentences"])
@@ -356,7 +361,10 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
     if keep_num:
         assert len(_pos_candidate_keys) >= _pos_num, (len(_pos_candidate_keys), _pos_num)
     else:
-        _pos_num = min(_pos_num, len(item["pos"]))
+        _pos_num = min(_pos_num, len(_pos_candidate_keys))
+
+    if len(_pos_candidate_keys) == 0:
+        return [], []
 
     _new_pos_keys = random.sample(_pos_candidate_keys, _pos_num)
     _new_pos = []
@@ -380,7 +388,9 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
 
     selected_sentences = item["selected_sentences"]
     if len(selected_sentences) == 0:
-        return []
+        return [], []
+    assert len(item["pos"]) > 0, (len(item["pos"]), len(item["selected_sentences"]), len(item["rest_sentences"]))
+
     context = " ".join([" ".join(s["sent"]) for s_id, s in selected_sentences.items()])
 
     path_sent2rep = [(s_id, s) for s_id, s in selected_sentences.items() if s["h"] != -1 and s["t"] != -1]
@@ -612,14 +622,15 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
             sampled_neg_candidates = _negative_pool[_sampled_neg_item_key]
 
             # Replace the replacement with the head/tail entity string from the sampled negative data item.
-            for _tmp in h_t_ent_ids:
-                if _tmp == h_t_ent_ids[0]:  # head entity
-                    _neg_head_str = get_ent_str(sampled_neg_candidates[0], sampled_neg_candidates[0]["h"])
-                    _cur_aug_rep_pairs[_tmp] = _neg_head_str  # If the head entity isn't to be replaced, add it.
+            if len(sampled_neg_candidates):  # 可能 random 搞的样本没有 ``pos`` 标签，所以跳过就好
+                for _tmp in h_t_ent_ids:
+                    if _tmp == h_t_ent_ids[0]:  # head entity
+                        _neg_head_str = get_ent_str(sampled_neg_candidates[0], sampled_neg_candidates[0]["h"])
+                        _cur_aug_rep_pairs[_tmp] = _neg_head_str  # If the head entity isn't to be replaced, add it.
 
-                if _tmp == h_t_ent_ids[1]:  # tail entity
-                    _neg_tail_str = get_ent_str(sampled_neg_candidates[0], sampled_neg_candidates[0]["t"])
-                    _cur_aug_rep_pairs[_tmp] = _neg_tail_str  # If the head entity isn't to be replaced, add it.
+                    if _tmp == h_t_ent_ids[1]:  # tail entity
+                        _neg_tail_str = get_ent_str(sampled_neg_candidates[0], sampled_neg_candidates[0]["t"])
+                        _cur_aug_rep_pairs[_tmp] = _neg_tail_str  # If the head entity isn't to be replaced, add it.
 
             # TODO: Should other entities in ``sampled_rep_paris`` be replaced with the entity strings from the same negative sample item?
 
@@ -693,7 +704,8 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
                         break
 
             # Add simple negative samples from the ``rest_sentences`` from the sampled data item.
-            if len(neg_res) < MAX_NEG_SAMPLE_NUM:
+            if len(neg_res) < MAX_NEG_SAMPLE_NUM and len(sampled_neg_candidates):
+                # 如果 ``sampled_neg_candidates`` 为空，那么这里本质上和下面的随机负采样padding等价，跳过即可
                 for neg in _all_neg_candidates[_sampled_neg_item_key]:
                     _rep_res = replace_neg(sampled_neg_candidates[0], neg, rep_pairs=None, out_of_domain=False)
                     if _rep_res:
@@ -711,7 +723,10 @@ def _process_single_item(item, max_neg_num: int, aug_num: int, min_rep_num: int,
                     neg_data_item_id = random.choice(list(_all_neg_candidates.keys()))
                 neg = random.choice(_all_neg_candidates[neg_data_item_id])
 
-                _rep_res = replace_neg(sampled_neg_candidates[0], neg, rep_pairs=None, out_of_domain=True)
+                if len(sampled_neg_candidates):
+                    _rep_res = replace_neg(sampled_neg_candidates[0], neg, rep_pairs=None, out_of_domain=True)
+                else:
+                    _rep_res = replace_neg(pos_candi, neg, rep_pairs=None, out_of_domain=True)
                 if _rep_res:
                     neg_res.extend(_rep_res)
 
@@ -839,7 +854,7 @@ def read_examples(file_path: str, shuffle_context: bool = False,
                   max_neg_num: int = 3, aug_num: int = 10,
                   geo_p: float = 0.5, min_rep_num: int = 1,
                   deduct_ratio: float = 1.0, context_ratio: float = 1.0, remove_context: bool = False,
-                  max_neg_samples_num: int = 8, keep_num: bool = False,
+                  max_neg_samples_num: int = 8, keep_num: bool = False, pos_ratio: float = 0.1, path_ratio: float = 0.1,
                   num_workers: int = 48):
     logger.info(f"Loading raw examples from {file_path}...")
     raw_data = pickle.load(open(file_path, "rb"))
@@ -909,7 +924,8 @@ def read_examples(file_path: str, shuffle_context: bool = False,
               initargs=(entity_pool, negative_pool, all_neg_candidates, geometric_dist, max_neg_samples_num)) as p:
         _annotate = partial(_process_single_item,
                             max_neg_num=max_neg_num, aug_num=aug_num, min_rep_num=min_rep_num, shuffle_context=shuffle_context,
-                            deduct_ratio=deduct_ratio, context_ratio=context_ratio, remove_context=remove_context, keep_num=keep_num)
+                            deduct_ratio=deduct_ratio, context_ratio=context_ratio, remove_context=remove_context, keep_num=keep_num,
+                            pos_ratio=pos_ratio, path_ratio=path_ratio)
         _results = list(tqdm(
             p.imap(_annotate, data, chunksize=32),
             total=len(data),
@@ -989,14 +1005,16 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
                                    shuffle_context: bool = False, max_neg_num: int = 3, aug_num: int = 10,
                                    max_seq_length: int = 512, geo_p: float = 0.5, min_rep_num: int = 1,
                                    deduct_ratio: float = 1.0, context_ratio: float = 1.0, remove_context: bool = False,
-                                   max_neg_samples_num: int = 8, keep_num: bool = False, num_workers=48):
+                                   max_neg_samples_num: int = 8, keep_num: bool = False, pos_ratio: float = 0.1, path_ratio: float = 0.8,
+                                   num_workers=48):
     tokenizer_name = tokenizer.__class__.__name__
     tokenizer_name = tokenizer_name.replace('TokenizerFast', '')
     tokenizer_name = tokenizer_name.replace('Tokenizer', '').lower()
 
     file_suffix = f"{tokenizer_name}_{shuffle_context}_{max_neg_num}_{aug_num}_" \
                   f"{max_seq_length}_{geo_p}_{min_rep_num}_" \
-                  f"{deduct_ratio}_{context_ratio}_{max_neg_samples_num}_{keep_num}_{'' if not remove_context else 'no-ctx-ex_'}path_v8_2"
+                  f"{deduct_ratio}_{context_ratio}_{max_neg_samples_num}_{keep_num}_{pos_ratio}_{path_ratio}" \
+                  f"_{'' if not remove_context else 'no-ctx-ex_'}path_v8_2"
 
     file_suffix = file_suffix + "_random_sf"
 
@@ -1011,7 +1029,8 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
                                                           aug_num=aug_num, geo_p=geo_p, min_rep_num=min_rep_num,
                                                           deduct_ratio=deduct_ratio, context_ratio=context_ratio,
                                                           remove_context=remove_context, max_neg_samples_num=max_neg_samples_num,
-                                                          keep_num=keep_num, num_workers=num_workers)
+                                                          keep_num=keep_num, pos_ratio=pos_ratio, path_ratio=path_ratio,
+                                                          num_workers=num_workers)
     all_examples = examples + context_examples
 
     # Save

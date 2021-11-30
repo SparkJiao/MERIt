@@ -699,7 +699,7 @@ class RobertaForMultipleChoicePrompt(RobertaPreTrainedModel, LogMixin, ABC):
         ex_prefix_pos = prefix_pos.unsqueeze(-1).expand(-1, -1, input_embeds.size(-1))
         prefix_embed = torch.gather(input_embeds, index=ex_prefix_pos, dim=1)
         prefix_embed = self.prompt_mlp(prefix_embed)
-        input_embeds = torch.scatter(input_embeds, dim=1, index=ex_prefix_pos, src=prefix_embed)
+        input_embeds = torch.scatter(input_embeds, dim=1, index=ex_prefix_pos, src=prefix_embed.to(dtype=input_embeds.dtype))
 
         if self.freeze_encoder:
             input_embeds = layers.keep_grad_prompt(input_embeds, prefix_pos)

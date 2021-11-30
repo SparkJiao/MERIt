@@ -38,10 +38,10 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, Tens
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 from transformers import (AdamW, get_linear_schedule_with_warmup, AutoTokenizer, PreTrainedTokenizer)
-import bitsandbytes as bnb
 
 from general_util.logger import setting_logger
 from general_util.training_utils import batch_to_device, unwrap_model, set_seed, note_best_checkpoint
+from apex import amp
 
 try:
     from tensorboardX import SummaryWriter
@@ -68,14 +68,14 @@ def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, 
         logger.info("Saving model checkpoint to %s", output_dir)
 
 
-def forward_step(model, inputs: Dict[str, torch.Tensor], cfg, scaler):
-    if cfg.fp16:
-        with torch.cuda.amp.autocast():
-            outputs = model(**inputs)
-            loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
-    else:
-        outputs = model(**inputs)
-        loss = outputs["loss"]  # model outputs are always tuple in pytorch-transformers (see doc)
+def forward_step(model, inputs: Dict[str, torch.Tensor], cfg, scaler, optimizer):
+    # if cfg.fp16:
+    #     with torch.cuda.amp.autocast():
+    #         outputs = model(**inputs)
+    #         loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
+    # else:
+    outputs = model(**inputs)
+    loss = outputs["loss"]  # model outputs are always tuple in pytorch-transformers (see doc)
 
     if cfg.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
@@ -83,7 +83,11 @@ def forward_step(model, inputs: Dict[str, torch.Tensor], cfg, scaler):
         loss = loss / cfg.gradient_accumulation_steps
 
     if cfg.fp16:
-        scaler.scale(loss).backward()
+        if scaler is None:
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            scaler.scale(loss).backward()
     else:
         loss.backward()
 
@@ -132,20 +136,18 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
                 'weight_decay': 0.0
             }
         ]
-        if "bit_training" in cfg and cfg.bit_training:
-            optimizer = bnb.optim.Adam8bit(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon,
-                                           betas=(eval(cfg.adam_betas)))
-        else:
-            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
+        optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
 
     if cfg.fp16:
         if cfg.local_rank != -1:
             scaler = ShardedGradScaler()
         else:
-            from torch.cuda.amp.grad_scaler import GradScaler
-
-            scaler = GradScaler()
+            # from torch.cuda.amp.grad_scaler import GradScaler
+            #
+            # scaler = GradScaler()
+            model, optimizer = amp.initialize(model, optimizer, opt_level=cfg.fp16_opt_level)
+            scaler = None
     else:
         scaler = None
 
@@ -177,11 +179,7 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
                 'weight_decay': 0.0
             }
         ]
-        if "bit_training" in cfg and cfg.bit_training:
-            optimizer = bnb.optim.Adam8bit(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon,
-                                           betas=(eval(cfg.adam_betas)))
-        else:
-            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon)
+        optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon)
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
 
     logger.info(optimizer)
@@ -226,14 +224,15 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
             if (step + 1) % cfg.gradient_accumulation_steps != 0 and cfg.local_rank != -1:
                 # Avoid unnecessary DDP synchronization since there will be no backward pass on this example.
                 with model.no_sync():
-                    loss = forward_step(model, batch, cfg, scaler)
+                    loss = forward_step(model, batch, cfg, scaler, optimizer)
             else:
-                loss = forward_step(model, batch, cfg, scaler)
+                loss = forward_step(model, batch, cfg, scaler, optimizer)
 
             tr_loss += loss
             if (step + 1) % cfg.gradient_accumulation_steps == 0:
                 if cfg.fp16:
-                    scaler.unscale_(optimizer)
+                    if scaler is not None:
+                        scaler.unscale_(optimizer)
 
                 if cfg.max_grad_norm:
                     if hasattr(optimizer, "clip_grad_norm"):
@@ -241,9 +240,12 @@ def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_s
                     elif hasattr(model, "clip_grad_norm_"):
                         model.clip_grad_norm_(cfg.max_grad_norm)
                     else:
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
+                        if cfg.fp16 and scaler is None:
+                            torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), cfg.max_grad_norm)
+                        else:
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
 
-                if cfg.fp16:
+                if cfg.fp16 and scaler is not None:
                     scaler.step(optimizer)
                     scaler.update()
                 else:
