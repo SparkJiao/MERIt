@@ -4,16 +4,12 @@ hydra:
 
 train_file: /home/share/jiaofangkai/wiki_erica_path/v7/union/train_distant.path_v7.train.0.pkl
 dev_file: /home/share/jiaofangkai/wiki_erica_path/v7/union/train_distant.path_v7.dev.pkl
-#train_file: /home/share/jiamengzhao/wiki_erica_path/v7/union/train_distant.path_v7.train.0.pkl
-#dev_file: /home/share/jiamengzhao/wiki_erica_path/v7/union/train_distant.path_v7.dev.pkl
 test_file:
 
 # Model
 model:
-  _target_: models.deberta.DebertaV2ForMultipleChoicePreTrain.from_pretrained
-  mlp_hidden_size: 3072  # For v2-xlarge
-  fs_checkpoint: False
-  fs_checkpoint_offload_to_cpu: False
+  _target_: models.roberta_baseline.RobertaForMultipleChoiceForPreTrain.from_pretrained
+  mlp_hidden_size: 2048  # For large model.
 
 # Data loading
 read_tensor:
@@ -26,6 +22,7 @@ read_tensor:
   geo_p: 0.4
   deduct_ratio: 1.0
   context_ratio: 1.0
+  remove_context: False
   num_workers: 64
 
 extended_vocab:
@@ -35,19 +32,25 @@ extended_vocab:
 collator:
   _target_: dataset.wiki_entity_path_v8.WikiPathDatasetCollatorWithContext
   max_seq_length: 256
-  tokenizer: pretrained-models/deberta-v2-xlarge
+  tokenizer: pretrained-models/roberta-large
   mlm_probability: 0.15
   max_option_num: 4
   swap: True
 
 # Dataloader
-num_workers: 8
+num_workers: 4
 prefetch_factor: 2
 
-model_name_or_path: pretrained-models/deberta-v2-xlarge
+
+#model_name_or_path: pretrained-models/roberta-large-mnli
+model_name_or_path: pretrained-models/roberta-large
+#model_name_or_path: pretrained-models/roberta-base
+#model_name_or_path: pretrained-models/albert-xxlarge-v2
 pretrain:
 
-output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.TeslaT4.v1.0
+#output_dir: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.TeslaT4
+#output_dir: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.1aug.fix.TeslaT4
+output_dir: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.1aug.fix.2080Ti
 
 do_train: Train
 evaluate_during_training: True
@@ -61,39 +64,41 @@ do_preprocess: False
 # ============= For base model ==========
 #per_gpu_train_batch_size: 4
 #per_gpu_eval_batch_size: 4
-#learning_rate: 1e-4
+#learning_rate: 4e-4
 # ============= For large model =============
-per_gpu_train_batch_size: 1
-per_gpu_eval_batch_size: 1
-#per_gpu_train_batch_size: 2
-#per_gpu_eval_batch_size: 2
-learning_rate: 5e-5
-gradient_accumulation_steps: 2048
-#gradient_accumulation_steps: 128 # For 8bit test only
+#per_gpu_train_batch_size: 1
+#per_gpu_eval_batch_size: 1
+per_gpu_train_batch_size: 2
+per_gpu_eval_batch_size: 2
+learning_rate: 1e-4
+gradient_accumulation_steps: 1024
 weight_decay: 0.01
 adam_epsilon: 1e-6
-adam_betas: "(0.9, 0.999)"
+adam_betas: "(0.9, 0.98)"
 max_grad_norm: 5.0
 num_train_epochs: 5
-max_steps: 100
-warmup_proportion: 0.2
+max_steps: 500
+warmup_proportion: 0.1
 warmup_steps: 0
 
 # Optimizer
 optimizer:
 use_nvlamb:
+bit_training: True
 
 logging_steps: 1
-save_steps: 50
-eval_steps: 50
+#save_steps: 50
+#eval_steps: 50
+save_steps: 100
+eval_steps: 100
 no_cuda: False
 seed: 42
 local_rank: -1
 fp16: True
-fp16_opt_level: O2
+fp16_opt_level: O1
 
 # fairscale.FullyShardedDDP
-reshard_after_forward: True
+reshard_after_forward: False
 cpu_offload: False
 move_grads_to_cpu: False
 move_params_to_cpu: False

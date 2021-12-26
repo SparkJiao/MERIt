@@ -1,5 +1,5 @@
 import random
-from typing import Dict
+from typing import Dict, List
 from omegaconf import DictConfig
 
 import numpy as np
@@ -38,9 +38,43 @@ def batch_to_device(batch: Dict[str, torch.Tensor], device):
     return batch_on_device
 
 
+def initialize_optimizer(cfg: DictConfig, grouped_parameters: List[Dict]):
+    if "optimizer" in cfg and cfg.optimizer == 'lamb':
+        if "bit_training" in cfg and cfg.bit_training:
+            from bitsandbytes.optim import LAMB8bit
+
+            optimizer = LAMB8bit(grouped_parameters,
+                                 lr=cfg.learning_rate,
+                                 betas=eval(cfg.adam_betas),
+                                 eps=cfg.adam_epsilon,
+                                 max_unorm=cfg.max_grad_norm)
+        else:
+            from apex.optimizers.fused_lamb import FusedLAMB
+
+            optimizer = FusedLAMB(grouped_parameters,
+                                  lr=cfg.learning_rate,
+                                  betas=eval(cfg.adam_betas),
+                                  eps=cfg.adam_epsilon,
+                                  use_nvlamb=(cfg.use_nvlamb if "use_nvlamb" in cfg else False),
+                                  max_grad_norm=cfg.max_grad_norm)
+    else:
+        if "bit_training" in cfg and cfg.bit_training:
+            from bitsandbytes.optim import AdamW8bit
+
+            optimizer = AdamW8bit(grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=(eval(cfg.adam_betas)))
+        else:
+            from transformers import AdamW
+
+            optimizer = AdamW(grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=(eval(cfg.adam_betas)))
+
+    return optimizer
+
+
 def note_best_checkpoint(cfg: DictConfig, results: Dict[str, float], sub_path: str):
     metric = results[cfg.prediction_cfg.metric]
     if (not cfg.prediction_cfg.best_result) or (cfg.prediction_cfg.measure > 0 and metric > cfg.prediction_cfg.best_result) or (
             cfg.prediction_cfg.measure < 0 and metric < cfg.prediction_cfg.best_result):
         cfg.prediction_cfg.best_result = metric
         cfg.prediction_cfg.best_checkpoint = sub_path
+        return True
+    return False

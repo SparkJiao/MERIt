@@ -30,9 +30,6 @@ from typing import Dict, Union
 import hydra
 import numpy as np
 import torch
-from fairscale.nn.data_parallel.fully_sharded_data_parallel import FullyShardedDataParallel as FullyShardedDDP
-from fairscale.nn.wrap.auto_wrap import auto_wrap
-from fairscale.optim.grad_scaler import ShardedGradScaler
 from omegaconf import DictConfig, OmegaConf
 from torch import distributed as dist
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset, Dataset)
@@ -51,7 +48,7 @@ except ImportError:
 logger: logging.Logger
 
 
-def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
+def save_model(model: torch.nn.Module, cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
     # Save model checkpoint.
     if cfg.local_rank != -1:
         state_dict = model.state_dict()
@@ -132,35 +129,19 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
 
     num_warmup_steps = int(t_total * cfg.warmup_proportion) if cfg.warmup_proportion else cfg.warmup_steps
 
-    optimizer = scheduler = None
     # Prepare optimizer and schedule (linear warmup and decay)
-    if cfg.local_rank == -1:
-        no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-             'weight_decay': cfg.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
-             'weight_decay': 0.0}
-        ]
-        if "optimizer" in cfg and cfg.optimizer == 'lamb':
-            from apex.optimizers.fused_lamb import FusedLAMB
-            optimizer = FusedLAMB(optimizer_grouped_parameters,
-                                  lr=cfg.learning_rate,
-                                  betas=eval(cfg.adam_betas),
-                                  eps=cfg.adam_epsilon,
-                                  use_nvlamb=(cfg.use_nvlamb if "use_nvlamb" in cfg else False),
-                                  max_grad_norm=cfg.max_grad_norm)
-        else:
-            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
+    no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+         'weight_decay': cfg.weight_decay},
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+         'weight_decay': 0.0}
+    ]
 
     if cfg.fp16:
-        if cfg.local_rank != -1:
-            scaler = ShardedGradScaler()
-        else:
-            from torch.cuda.amp.grad_scaler import GradScaler
+        from torch.cuda.amp.grad_scaler import GradScaler
 
-            scaler = GradScaler()
+        scaler = GradScaler()
     else:
         scaler = None
 
@@ -170,43 +151,49 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
         model = torch.nn.DataParallel(model_single_gpu)
 
     # Distributed training (should be after apex fp16 initialization)
-    if cfg.local_rank != -1:
-        model = auto_wrap(model)
-        model = FullyShardedDDP(model,
-                                mixed_precision=cfg.fp16,
-                                reshard_after_forward=cfg.reshard_after_forward,
-                                cpu_offload=cfg.cpu_offload,
-                                move_grads_to_cpu=cfg.move_grads_to_cpu,
-                                move_params_to_cpu=cfg.move_params_to_cpu)
-        if not cfg.cpu_offload:
-            model = model.to(cfg.device)
-
-        no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': cfg.weight_decay},
-            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
+    if cfg.local_rank == -1:
         if "optimizer" in cfg and cfg.optimizer == 'lamb':
-            try:
-                from apex.optimizers.fused_lamb import FusedLAMB
+            from deepspeed.ops.lamb import FusedLamb
 
-                optimizer = FusedLAMB(optimizer_grouped_parameters,
-                                      lr=cfg.learning_rate,
-                                      betas=eval(cfg.adam_betas),
-                                      eps=cfg.adam_epsilon,
-                                      use_nvlamb=(cfg.use_nvlamb if "use_nvlamb" in cfg else False),
-                                      max_grad_norm=cfg.max_grad_norm)
-            except ImportError:
-                from deepspeed.ops.lamb import FusedLamb as FusedLAMB
-
-                optimizer = FusedLAMB(optimizer_grouped_parameters,
-                                      lr=cfg.learning_rate,
-                                      betas=eval(cfg.adam_betas),
-                                      eps=cfg.adam_epsilon,
-                                      max_grad_norm=cfg.max_grad_norm)
+            optimizer = FusedLamb(optimizer_grouped_parameters,
+                                  lr=cfg.learning_rate,
+                                  betas=eval(cfg.adam_betas),
+                                  eps=cfg.adam_epsilon,
+                                  max_grad_norm=cfg.max_grad_norm)
         else:
             optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
+    else:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[cfg.local_rank], output_device=cfg.local_rank, find_unused_parameters=True
+        )
+
+        from torch.distributed.optim import ZeroRedundancyOptimizer
+
+        if "optimizer" in cfg and cfg.optimizer == 'lamb':
+            from deepspeed.ops.lamb import FusedLamb
+
+            optimizer_class = FusedLamb
+            optimizer_defaults = {
+                "lr": cfg.learning_rate,
+                "betas": eval(cfg.adam_betas),
+                "eps": cfg.adam_epsilon,
+                "max_grad_norm": cfg.max_grad_norm
+            }
+        else:
+            optimizer_class = AdamW
+            optimizer_defaults = {
+                "lr": cfg.learning_rate,
+                "eps": cfg.adam_epsilon,
+                "betas": eval(cfg.adam_betas)
+            }
+
+        optimizer = ZeroRedundancyOptimizer(
+            optimizer_grouped_parameters,
+            optimizer_class=optimizer_class,
+            parameters_as_bucket_view=True,
+            **optimizer_defaults
+        )
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
 
     logger.info(optimizer)
 
@@ -305,7 +292,6 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                     # Evaluation
                     if cfg.evaluate_during_training and cfg.eval_steps > 0 and global_step % cfg.eval_steps == 0:
                         if cfg.local_rank in [-1, 0]:
-                            # if cfg.local_rank == -1 or dist.get_rank() == 0:
                             results = evaluate(cfg, model, tokenizer, prefix=str(global_step), _split="dev")
                             for key, value in results.items():
                                 tb_writer.add_scalar(f"eval/{key}", value, global_step)
@@ -348,7 +334,6 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
     single_model_gpu = unwrap_model(model)
     single_model_gpu.get_eval_log(reset=True)
     # Eval!
-    # torch.cuda.empty_cache()
     logger.info("***** Running evaluation {}.{} *****".format(_split, prefix))
     logger.info("  Num examples = %d", len(dataset))
     logger.info("  Batch size = %d", cfg.eval_batch_size)

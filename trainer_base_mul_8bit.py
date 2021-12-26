@@ -144,20 +144,14 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
              'weight_decay': 0.0}
         ]
         if "optimizer" in cfg and cfg.optimizer == 'lamb':
-            # from apex.optimizers.fused_lamb import FusedLAMB
-            # optimizer = FusedLAMB(optimizer_grouped_parameters,
-            #                       lr=cfg.learning_rate,
-            #                       betas=eval(cfg.adam_betas),
-            #                       eps=cfg.adam_epsilon,
-            #                       use_nvlamb=(cfg.use_nvlamb if "use_nvlamb" in cfg else False),
-            #                       max_grad_norm=cfg.max_grad_norm)
             optimizer = bnb.optim.LAMB8bit(optimizer_grouped_parameters,
                                            lr=cfg.learning_rate,
                                            betas=eval(cfg.adam_betas),
-                                           eps=cfg.adam_epsilon,
-                                           max_unorm=cfg.max_grad_norm)
+                                           eps=cfg.adam_epsilon,)
+                                           # max_unorm=cfg.max_grad_norm)
         else:
-            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
+            optimizer = bnb.optim.Adam8bit(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon,
+                                           betas=eval(cfg.adam_betas))
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
 
     if cfg.fp16:
@@ -194,19 +188,11 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
         ]
         if "optimizer" in cfg and cfg.optimizer == 'lamb':
             try:
-                from apex.optimizers.fused_lamb import FusedLAMB
-
-                # optimizer = FusedLAMB(optimizer_grouped_parameters,
-                #                       lr=cfg.learning_rate,
-                #                       betas=eval(cfg.adam_betas),
-                #                       eps=cfg.adam_epsilon,
-                #                       use_nvlamb=(cfg.use_nvlamb if "use_nvlamb" in cfg else False),
-                #                       max_grad_norm=cfg.max_grad_norm)
                 optimizer = bnb.optim.LAMB8bit(optimizer_grouped_parameters,
                                                lr=cfg.learning_rate,
                                                betas=eval(cfg.adam_betas),
-                                               eps=cfg.adam_epsilon,
-                                               max_unorm=cfg.max_grad_norm)
+                                               eps=cfg.adam_epsilon,)
+                                               # max_unorm=cfg.max_grad_norm)
             except ImportError:
                 from deepspeed.ops.lamb import FusedLamb as FusedLAMB
 
@@ -216,7 +202,8 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                                       eps=cfg.adam_epsilon,
                                       max_grad_norm=cfg.max_grad_norm)
         else:
-            optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=eval(cfg.adam_betas))
+            optimizer = bnb.optim.Adam8bit(optimizer_grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon,
+                                           betas=eval(cfg.adam_betas))
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
 
     logger.info(optimizer)
@@ -282,7 +269,8 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
                     if cfg.fp16:
                         scaler.unscale_(optimizer)
 
-                    if cfg.max_grad_norm and not ("optimizer" in cfg and cfg.optimizer == "lamb"):
+                    # if cfg.max_grad_norm and not ("optimizer" in cfg and cfg.optimizer == "lamb"):
+                    if cfg.max_grad_norm:
                         if hasattr(optimizer, "clip_grad_norm"):
                             optimizer.clip_grad_norm(cfg.max_grad_norm)
                         elif hasattr(model, "clip_grad_norm_"):
@@ -359,7 +347,7 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
     single_model_gpu = unwrap_model(model)
     single_model_gpu.get_eval_log(reset=True)
     # Eval!
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
     logger.info("***** Running evaluation {}.{} *****".format(_split, prefix))
     logger.info("  Num examples = %d", len(dataset))
     logger.info("  Batch size = %d", cfg.eval_batch_size)

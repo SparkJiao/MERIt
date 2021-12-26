@@ -832,7 +832,7 @@ def convert_examples_into_features(file_path: str, tokenizer: PreTrainedTokenize
     file_suffix = f"{tokenizer_name}_{shuffle_context}_{max_neg_num}_{aug_num}_" \
                   f"{max_seq_length}_{geo_p}_{min_rep_num}_" \
                   f"{deduct_ratio}_{context_ratio}_{max_neg_samples_num}_" \
-                  f"{'' if not remove_context else 'no-ctx-ex_'}{'' if not remove_deduct else 'no-duc-ex_'}path_v8_2"
+                  f"{'' if not remove_context else 'no-ctx-ex_'}{'' if not remove_deduct else 'no-duc-ex_'}path_v8_2_fix"
 
     cached_file_path = f"{file_path}_{file_suffix}"
     if os.path.exists(cached_file_path):
