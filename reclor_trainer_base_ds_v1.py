@@ -24,62 +24,68 @@ import os
 import sys
 from typing import Dict, Union
 
+import deepspeed
 import hydra
 import numpy as np
 import torch
-import transformers
-from fairscale.nn.data_parallel.fully_sharded_data_parallel import FullyShardedDataParallel as FullyShardedDDP
-from fairscale.nn.wrap.auto_wrap import auto_wrap
-from fairscale.optim.grad_scaler import ShardedGradScaler
 from omegaconf import DictConfig, OmegaConf
 from torch import distributed as dist
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler, TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
-from transformers import (get_linear_schedule_with_warmup, AutoTokenizer, PreTrainedTokenizer)
-from accelerate import Accelerator, DistributedType, DeepSpeedPlugin
+from transformers import (AutoTokenizer, PreTrainedTokenizer)
 
 from general_util.logger import setting_logger
-from general_util.training_utils import batch_to_device, unwrap_model, set_seed, note_best_checkpoint, initialize_optimizer
+from general_util.training_utils import batch_to_device, unwrap_model, set_seed, note_best_checkpoint
 
 logger: logging.Logger
 
-transformers.logging.set_verbosity_error()
+
+# transformers.logging.set_verbosity_error()
+
+def get_zero_stage(cfg: DictConfig):
+    if hasattr(cfg, "zero_optimization"):
+        return int(getattr(cfg.zero_optimization, "stage", 0))
+    return 0
 
 
-def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
-    # Save model checkpoint.
-    if cfg.local_rank != -1:
-        state_dict = model.state_dict()
-        if cfg.local_rank == 0:
-            unwrap_model(model).save_pretrained(output_dir, state_dict=state_dict)
+def get_state_dict(model: Union[deepspeed.DeepSpeedEngine, deepspeed.PipelineEngine], cfg: DictConfig):
+    zero_stage = get_zero_stage(cfg)
+    if zero_stage == 3:
+        state_dict = model._zero3_consolidated_fp16_state_dict()
     else:
-        model.save_pretrained(output_dir)
+        state_dict = unwrap_model(model).state_dict()
+    return state_dict
 
-    # Save tokenizer and training args.
+
+def save_model(model: Union[deepspeed.DeepSpeedEngine, deepspeed.PipelineEngine],
+               cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None, state_dict: Dict = None):
+    unwrapped_model = unwrap_model(model)
+    if state_dict is None:
+        state_dict = get_state_dict(model, cfg)
+
     if cfg.local_rank in [-1, 0]:
+        for k in state_dict:
+            if state_dict[k].dtype == torch.float16:
+                state_dict[k] = state_dict[k].float()
+
+        unwrapped_model.save_pretrained(output_dir, state_dict=state_dict)
         if tokenizer is not None:
             tokenizer.save_pretrained(output_dir)
         OmegaConf.save(cfg, os.path.join(output_dir, "training_config.yaml"))
         logger.info("Saving model checkpoint to %s", output_dir)
 
 
-def forward_step(model, inputs: Dict[str, torch.Tensor], cfg, accelerator: Accelerator):
-    outputs = model(**inputs)
-    loss = outputs["loss"]  # model outputs are always tuple in pytorch-transformers (see doc)
-
-    if cfg.n_gpu > 1:
-        loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
-    if cfg.gradient_accumulation_steps > 1:
-        loss = loss / cfg.gradient_accumulation_steps
-
-    accelerator.backward(loss)
+def forward_step(model, inputs: Dict[str, torch.Tensor]):
+    loss = model(**inputs)["loss"]
+    model.backward(loss)
+    model.step()
 
     return loss.item()
 
 
-def train(cfg, accelerator: Accelerator, train_dataset, features, model, tokenizer, continue_from_global_step=0):
+def train(cfg, train_dataset, features, model, tokenizer, continue_from_global_step=0):
     """ Train the model """
     if cfg.local_rank in [-1, 0]:
         _dir_splits = cfg.output_dir.split('/')
@@ -89,36 +95,11 @@ def train(cfg, accelerator: Accelerator, train_dataset, features, model, tokeniz
         tb_writer = None
 
     cfg.train_batch_size = cfg.per_gpu_train_batch_size * max(1, cfg.n_gpu)
-    # train_sampler = RandomSampler(train_dataset) if cfg.local_rank == -1 else DistributedSampler(train_dataset)
+    train_sampler = RandomSampler(train_dataset) if cfg.local_rank == -1 else DistributedSampler(train_dataset)
     train_collator = hydra.utils.instantiate(cfg.collator) if "collator" in cfg and cfg.collator else None
-    # train_dataloader = DataLoader(dataset=train_dataset, sampler=train_sampler, batch_size=cfg.train_batch_size,
-    #                               collate_fn=train_collator, num_workers=cfg.num_workers, pin_memory=True,
-    #                               prefetch_factor=cfg.prefetch_factor)
-    train_dataloader = DataLoader(dataset=train_dataset, batch_size=cfg.train_batch_size, collate_fn=train_collator,
-                                  num_workers=cfg.num_workers, pin_memory=True, prefetch_factor=cfg.prefetch_factor, shuffle=True)
-    # logger.info(train_sampler.__class__)
-
-    if "extended_vocab" in cfg and cfg.extended_vocab:
-        logger.info(f"Extended extra vocab size: {cfg.extended_vocab}")
-        model.resize_token_embeddings(model.config.vocab_size + cfg.extended_vocab)
-
-    # Prepare optimizer and schedule (linear warmup and decay)
-    no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
-    optimizer_grouped_parameters = [
-        {
-            'params': [p for n, p in model.named_parameters() if (not any(nd in n for nd in no_decay)) and p.requires_grad],
-            'weight_decay': cfg.weight_decay
-        },
-        {
-            'params': [p for n, p in model.named_parameters() if (any(nd in n for nd in no_decay)) and p.requires_grad],
-            'weight_decay': 0.0
-        }
-    ]
-    optimizer = initialize_optimizer(cfg, optimizer_grouped_parameters)
-
-    model, optimizer, train_dataloader = accelerator.prepare(model, optimizer, train_dataloader)
-    logger.info(optimizer)
-    logger.info(train_dataloader.sampler.__class__)
+    train_dataloader = DataLoader(dataset=train_dataset, sampler=train_sampler, batch_size=cfg.train_batch_size,
+                                  collate_fn=train_collator, num_workers=cfg.num_workers, pin_memory=True,
+                                  prefetch_factor=cfg.prefetch_factor)
 
     if cfg.max_steps > 0:
         t_total = cfg.max_steps
@@ -127,7 +108,29 @@ def train(cfg, accelerator: Accelerator, train_dataset, features, model, tokeniz
         t_total = len(train_dataloader) // cfg.gradient_accumulation_steps * cfg.num_train_epochs
 
     num_warmup_steps = int(t_total * cfg.warmup_proportion) if cfg.warmup_proportion else cfg.warmup_steps
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=t_total)
+
+    if "extended_vocab" in cfg and cfg.extended_vocab:
+        logger.info(f"Extended extra vocab size: {cfg.extended_vocab}")
+        model.resize_token_embeddings(model.config.vocab_size + cfg.extended_vocab)
+
+    ds_config = cfg.ds_cfg
+    ds_config.scheduler.params.total_num_steps = t_total
+    ds_config.scheduler.params.warmup_num_steps = num_warmup_steps
+    ds_config = OmegaConf.to_container(ds_config, resolve=True)
+
+    # FIXME: Not supported in CPUAdam? Open an issue.
+    # no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
+    # optimizer_grouped_parameters = [
+    #     {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+    #      'weight_decay': cfg.weight_decay},
+    #     {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+    #      'weight_decay': 0.0}
+    # ]
+
+    model, optimizer, _, scheduler = deepspeed.initialize(model=model,
+                                                          model_parameters=model.parameters(),
+                                                          config=ds_config)
+    logger.info(optimizer.optimizer)
 
     # Train!
     logger.info("***** Running training *****")
@@ -145,14 +148,14 @@ def train(cfg, accelerator: Accelerator, train_dataset, features, model, tokeniz
 
     global_step = 0
     tr_loss, logging_loss = 0.0, 0.0
-    optimizer.zero_grad()
+    # model.zero_grad()
     train_iterator = trange(int(cfg.num_train_epochs), desc="Epoch", disable=cfg.local_rank not in [-1, 0])
     set_seed(cfg)  # Added here for reproducibility (even between python 2 and 3)
 
     for epoch in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=cfg.local_rank not in [-1, 0], dynamic_ncols=True)
-        # if cfg.local_rank != -1:
-        #     train_dataloader.sampler.set_epoch(epoch)
+        if cfg.local_rank != -1:
+            train_dataloader.sampler.set_epoch(epoch)
 
         for step, batch in enumerate(epoch_iterator):
             # If training is continued from a checkpoint, fast forward
@@ -166,26 +169,11 @@ def train(cfg, accelerator: Accelerator, train_dataset, features, model, tokeniz
             model.train()
             batch = batch_to_device(batch, cfg.device)
 
-            # if (step + 1) % cfg.gradient_accumulation_steps != 0 and cfg.local_rank != -1:
-            #     # Avoid unnecessary DDP synchronization since there will be no backward pass on this example.
-            #     with model.no_sync():
-            #         loss = forward_step(model, batch, cfg, accelerator)
-            # else:
-            loss = forward_step(model, batch, cfg, accelerator)
+            loss = forward_step(model, batch)
+            loss /= cfg.gradient_accumulation_steps
 
             tr_loss += loss
             if (step + 1) % cfg.gradient_accumulation_steps == 0:
-                if cfg.max_grad_norm:
-                    if hasattr(model, "clip_grad_norm_"):
-                        model.clip_grad_norm_(cfg.max_grad_norm)
-                    elif hasattr(optimizer, "clip_grad_norm"):
-                        optimizer.clip_grad_norm(cfg.max_grad_norm)
-                    else:
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
-
-                optimizer.step()
-                scheduler.step()  # Update learning rate schedule
-                optimizer.zero_grad()
                 global_step += 1
 
                 # Log metrics
@@ -203,7 +191,7 @@ def train(cfg, accelerator: Accelerator, train_dataset, features, model, tokeniz
 
                 # Evaluation
                 if cfg.evaluate_during_training and cfg.eval_steps > 0 and global_step % cfg.eval_steps == 0:
-                    state_dict = accelerator.get_state_dict(model)
+                    state_dict = get_state_dict(model, cfg)
 
                     if cfg.local_rank in [-1, 0]:
                         results = evaluate(cfg, model, tokenizer, prefix=str(global_step), _split="dev")
@@ -213,12 +201,8 @@ def train(cfg, accelerator: Accelerator, train_dataset, features, model, tokeniz
                         sub_path = os.path.join(cfg.output_dir, 'checkpoint-{}'.format(global_step))
                         flag = note_best_checkpoint(cfg, results, sub_path)
                         if cfg.save_best and flag:
-                            unwrapped_model = accelerator.unwrap_model(model)
-                            unwrapped_model.save_pretrained(cfg.output_dir, save_function=accelerator.save, state_dict=state_dict)
-
-                            tokenizer.save_pretrained(cfg.output_dir)
-                            OmegaConf.save(cfg, os.path.join(cfg.output_dir, "training_config.yaml"))
-                            logger.info("Saving best model checkpoint to %s", cfg.output_dir)
+                            save_model(model, cfg, cfg.output_dir, tokenizer, state_dict)
+                            del state_dict
 
             if 0 < cfg.max_steps < global_step:
                 epoch_iterator.close()
@@ -252,18 +236,18 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
     logger.info("***** Running evaluation {}.{} *****".format(_split, prefix))
     logger.info("  Num examples = %d", len(dataset))
     logger.info("  Batch size = %d", cfg.eval_batch_size)
+
     model.eval()
     pred_list = []
     prob_list = []
     for batch in tqdm(eval_dataloader, desc="Evaluating", dynamic_ncols=True):
         batch = batch_to_device(batch, cfg.device)
-        with torch.cuda.amp.autocast():
-            with torch.no_grad():
-                outputs = model(**batch)
-                probs = outputs["logits"].softmax(dim=-1).detach().float().cpu()
-                prob, pred = probs.max(dim=-1)
-                pred_list.extend(pred.tolist())
-                prob_list.extend(prob.tolist())
+        with torch.no_grad():
+            outputs = model(**batch)
+            probs = outputs["logits"].softmax(dim=-1).detach().float().cpu()
+            prob, pred = probs.max(dim=-1)
+            pred_list.extend(pred.tolist())
+            prob_list.extend(prob.tolist())
 
     metric_log, results = single_model_gpu.get_eval_log(reset=True)
     logger.info("****** Evaluation Results ******")
@@ -306,21 +290,13 @@ def main(cfg: DictConfig):
         device = str(torch.device("cuda" if torch.cuda.is_available() and not cfg.no_cuda else "cpu"))
         cfg.n_gpu = torch.cuda.device_count()
     else:  # Initializes the distributed backend which will take care of synchronizing nodes/GPUs
-        # torch.cuda.set_device(cfg.local_rank)
+        torch.cuda.set_device(cfg.local_rank)
         device = str(torch.device("cuda", cfg.local_rank))
         # dist.init_process_group(backend='nccl')
+        deepspeed.init_distributed()
         cfg.n_gpu = 1
-        # cfg.world_size = dist.get_world_size()
-
-    deepspeed_plugin = DeepSpeedPlugin(
-        gradient_accumulation_steps=cfg.gradient_accumulation_steps,
-        zero_stage=cfg.ds_cfg.zero_optimization.stage,
-        offload_optimizer_device=cfg.ds_cfg.zero_optimization.offload_optimizer.device
-    )
-    accelerator = Accelerator(fp16=cfg.fp16, deepspeed_plugin=deepspeed_plugin)
-    cfg.device = str(accelerator.device)
-    if cfg.local_rank != -1:
         cfg.world_size = dist.get_world_size()
+    cfg.device = device
 
     global logger
     logger = setting_logger(cfg.output_dir, local_rank=cfg.local_rank)
@@ -371,7 +347,7 @@ def main(cfg: DictConfig):
         #         model.to(args.device)
 
         train_dataset, features = load_and_cache_examples(cfg, tokenizer, _split="train")
-        global_step, tr_loss = train(cfg, accelerator, train_dataset, features, model, tokenizer, continue_from_global_step)
+        global_step, tr_loss = train(cfg, train_dataset, features, model, tokenizer, continue_from_global_step)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
     # Test

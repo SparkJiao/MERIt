@@ -58,7 +58,7 @@ path-pt-v8-1-random-ht-cp500-w4-5.0-s44: 61.8 77.05 49.82
 path-pt-v8-1-random-ht-cp500-w4-5.0-s45: 59.4 78.18 44.648
 path-pt-v8-1-random-ht-cp500-w4-5.0-s4322: 57.60 79.09 40.71
 
-Average: 
+Average: 57.9
 path-pt-v8-1-random-ht-no-aug-cp500-w4-5.0-s42: 55.7 74.09 41.25
 path-pt-v8-1-random-ht-no-aug-cp500-w4-5.0-s43: 59.1 76.14 45.71
 path-pt-v8-1-random-ht-no-aug-cp500-w4-5.0-s44: 58.4 76.82 43.93

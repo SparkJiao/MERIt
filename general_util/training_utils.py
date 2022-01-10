@@ -63,7 +63,10 @@ def initialize_optimizer(cfg: DictConfig, grouped_parameters: List[Dict]):
 
             optimizer = AdamW8bit(grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=(eval(cfg.adam_betas)))
         else:
-            from transformers import AdamW
+            if hasattr(cfg, "multi_tensor") and cfg.multi_tensor:
+                from torch.optim._multi_tensor import AdamW
+            else:
+                from transformers import AdamW
 
             optimizer = AdamW(grouped_parameters, lr=cfg.learning_rate, eps=cfg.adam_epsilon, betas=(eval(cfg.adam_betas)))
 

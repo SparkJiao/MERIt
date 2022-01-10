@@ -30,6 +30,7 @@ from typing import Dict, Union
 import hydra
 import numpy as np
 import torch
+import transformers
 from fairscale.nn.data_parallel.fully_sharded_data_parallel import FullyShardedDataParallel as FullyShardedDDP
 from fairscale.nn.wrap.auto_wrap import auto_wrap
 from fairscale.optim.grad_scaler import ShardedGradScaler
@@ -45,6 +46,8 @@ from general_util.logger import setting_logger
 from general_util.training_utils import set_seed, batch_to_device, unwrap_model, initialize_optimizer
 
 logger: logging.Logger
+
+transformers.logging.set_verbosity_error()
 
 
 def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
@@ -161,11 +164,11 @@ def train(cfg, model, tokenizer, continue_from_global_step=0):
         model = auto_wrap(model)
         model = FullyShardedDDP(model,
                                 mixed_precision=cfg.fp16,
+                                flatten_parameters=getattr(cfg, "flatten_parameters", True),
                                 reshard_after_forward=cfg.reshard_after_forward,
-                                cpu_offload=cfg.cpu_offload,
                                 move_grads_to_cpu=cfg.move_grads_to_cpu,
                                 move_params_to_cpu=cfg.move_params_to_cpu)
-        if not cfg.cpu_offload:
+        if not cfg.move_params_to_cpu:
             model = model.to(cfg.device)
 
         no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
