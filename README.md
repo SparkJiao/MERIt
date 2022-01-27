@@ -28,6 +28,14 @@ Some special notes:
 
 ## Pre-training
 
+The pre-trained models (including the checkpoints) are available here:
+- [RoBERTa-large]()
+- [ALBERT-xxlarge]()
+- [DeBERTa-large]()
+- [DeBERTa-xlarge]()
+
+You can also pre-train the models by yourself as following.
+
 Pending...
 
 ## Fine-tuning
