@@ -1,7 +1,42 @@
-# ReClor_challenge
+# MERIt: Meta-Path Guided Contrastive Learning for Logical Reasoning
 
+This is the pytorch implementation of the paper: **MERIt: Meta-Path Guided Contrastive Learning for Logical Reasoning.** Fangkai Jiao, Yangyang Guo, Xuemeng Song, Liqiang Nie. _._
+
+## Project Structure
+
+```
+|--- conf/   // The configs of all experiments in yaml.
+|--- dataset/   // The classes or functions to convert raw text inputs as tensor and utils for batch sampling.
+|--- experiments/   // We may provide the prediction results on the datasets, e.g., the .npy file that can be submitted to ReClor leaderboard.
+|--- general_util/  // Metrics and training utils.
+|--- models/    // The transformers for pre-training and fine-tuning.
+|--- modules/
+|--- preprocess/    // The scripts to pre-process Wikipedia documents for pre-training.
+|--- scripts/   // The bash scripts of our experiments.
+|--- reclor_trainer....py   // Trainers for fine-tuning.
+|--- trainer_base....py     // Trainers for pre-training.
+```
+
+## Requirements
+
+For general requirements, please follow the ``requirements.txt`` file.
+
+Some special notes:
+- The [fairscale](https://github.com/facebookresearch/fairscale) is used for fast and memory efficient distributed training, and it's not necessary.
+- [NVIDIA Apex](https://github.com/NVIDIA/apex) is required if you want to use the ``FusedLAMB`` optimizer for pre-training. It's also not necessary since you can use ``AdamW``.
+- ``RoBERTa-large`` requires at least 12GB memory on single GPU, ``ALBERT-xxlarge`` requires at least 14GB, and we use A100 GPU for ``Deberta-v2-xlarge`` pre-training. Using fairscale can help reduce the memory requirements with more GPUs. We have tried to use ``Deepspeed`` for ``Deberta`` pre-training through CPU-offload but failed.
+
+## Pre-training
+
+Pending...
+
+## Fine-tuning
+
+Pending...
 
 ## Experimental Results
+
+Pending...
 
 ### ReClor
 
@@ -125,3 +160,6 @@ path-pt-v8-2-2-1aug-ctx-cp500-w4-5.1-s4321: 67.4 62.10 79.32 48.57 s1500
 2. 对于另一部分问题，需要正确处理的是逻辑顺序，即如果能够按照一定顺序重新组合题目和选项中的叙事，整体的逻辑“看上去”就是正确的。
     1. 从这个角度出发，需要解决的问题是如何建模叙述的线索。sentence的粒度太粗，token的粒度太细，希望能使用短语的粒度。
     2. 关于顺序如何建模？GNN是肯定要用的了，问题在于怎么把顺序考虑进去，以提供解释性或者方便实验验证。
+
+
+## Citation
