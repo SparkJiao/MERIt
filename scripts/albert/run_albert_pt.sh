@@ -11,7 +11,7 @@
 #done;
 #python reclor_trainer_apex.py --seed=4321 -cp conf/albert -cn albert_pt_v822_1aug_ctx
 #python -m torch.distributed.launch --nproc_per_node 2 reclor_trainer_base.py --seed=4321 -cp conf/albert -cn albert_pt_v822_1aug_ctx
-python -m torch.distributed.launch --nproc_per_node 2 reclor_trainer_base.py --seed=46 -cp conf/albert -cn albert_pt_v822_1aug_ctx
+#python -m torch.distributed.launch --nproc_per_node 2 reclor_trainer_base.py --seed=46 -cp conf/albert -cn albert_pt_v822_1aug_ctx
 
 ## 2gpu fine-tuning
 #for seed in 42 43 44 45 4321; do
@@ -30,3 +30,7 @@ python -m torch.distributed.launch --nproc_per_node 2 reclor_trainer_base.py --s
 #  python reclor_trainer_base.py --seed=$seed -cp conf/albert -cn albert_ft_v822_1aug_ctx
 #done;
 
+# =============================================
+for seed in 42 43 44 45 4321; do
+  python -m torch.distributed.launch --nproc_per_node 4 reclor_trainer_base_v2.py seed=$seed -cp conf/albert -cn albert_pt_v822_1aug_ctx_et0
+done;

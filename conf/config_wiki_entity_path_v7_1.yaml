@@ -20,6 +20,7 @@ read_tensor:
 #  _target_: datasets.wiki_entity_path_v7.convert_examples_into_features
   _target_: datasets.wiki_entity_path_v7_1.convert_examples_into_features
   max_neg_num: 3
+#  max_neg_num: 5
   aug_num: 2
   max_seq_length: 384
   shuffle_context: True
@@ -38,6 +39,7 @@ collator:
   tokenizer: pretrained-models/roberta-large
   mlm_probability: 0.15
   max_option_num: 4
+#  max_option_num: 6
 
 # Dataloader
 num_workers: 16
@@ -71,7 +73,8 @@ pretrain:
 #output_dir: experiments/roberta.large.wiki_erica_path_v6_0.1.0.2080Ti
 #output_dir: experiments/roberta.large.wiki_erica_path_v7_0.1.0.2080Ti
 #output_dir: experiments/roberta.large.wiki_erica_path_v7_1.1.0.2080Ti.pp
-output_dir: experiments/roberta.large.wiki_erica_path_v7_1.rep6.1.0.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v7_1.rep6.1.0.2080Ti  # version 7_1.rep6 has a bug where some examples have less than 3 negative examples.
+output_dir: experiments/roberta.large.wiki_erica_path_v7_1.rep6.1.1.2080Ti
 
 do_train: True
 evaluate_during_training: True

@@ -80,7 +80,12 @@ def save_model(model: Union[deepspeed.DeepSpeedEngine, deepspeed.PipelineEngine]
 
 
 def forward_step(model, inputs: Dict[str, torch.Tensor]):
-    loss = model(**inputs)["loss"]
+    # loss = model(**inputs)["loss"]
+    outputs = model(**inputs)
+    if isinstance(outputs, tuple):
+        loss = outputs[0]
+    else:
+        loss = outputs["loss"]
     model.backward(loss)
     model.step()
 

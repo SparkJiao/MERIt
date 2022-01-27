@@ -1,0 +1,109 @@
+hydra:
+  run:
+    dir: ./
+
+train_file: /home/share/jiaofangkai/wiki_erica_path/v6/union/train_distant.path_v6.train.0.pkl
+dev_file: /home/share/jiaofangkai/wiki_erica_path/v6/union/train_distant.path_v6.dev.pkl
+test_file:
+
+# Model
+model:
+  _target_: models.albert_baseline.AlbertForMultipleChoicePreTrain.from_pretrained
+  mlp_hidden_size: 3072  # For large model.
+
+# Data loading
+read_tensor:
+  _target_: dataset.wiki_entity_path_v8_1.convert_examples_into_features
+  max_neg_num: 3
+  aug_num: 1
+  max_seq_length: 384
+  shuffle_context: True
+  min_rep_num: 2
+  geo_p: 0.4
+  num_workers: 64
+
+extended_vocab:
+#  _target_: datasets.wiki_entity_path.get_num_extended_tokens
+
+# Data collator
+collator:
+  _target_: dataset.wiki_entity_path_v8.WikiPathDatasetCollatorWithContext
+  max_seq_length: 384
+  tokenizer: pretrained-models/albert-xxlarge-v2
+  mlm_probability: 0.15
+  max_option_num: 4
+  swap: True
+
+# Dataloader
+num_workers: 8
+prefetch_factor: 2
+
+
+#model_name_or_path: pretrained-models/roberta-large-mnli
+#model_name_or_path: ../../pretrained-models/roberta-large
+#model_name_or_path: pretrained-models/roberta-base
+model_name_or_path: pretrained-models/albert-xxlarge-v2
+pretrain:
+
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.V100-16g
+output_dir: experiments/albert.xxlarge.wiki_erica_path_v8.1.1.TeslaT4
+
+do_train: Train
+evaluate_during_training: True
+
+do_eval: False
+eval_sub_path:
+
+do_preprocess: False
+
+# Training hyper-parameters
+# ============= For base model ==========
+#per_gpu_train_batch_size: 4
+#per_gpu_eval_batch_size: 4
+#learning_rate: 1e-4
+# ============= For large model =============
+#per_gpu_train_batch_size: 1
+#per_gpu_eval_batch_size: 1
+per_gpu_train_batch_size: 1
+per_gpu_eval_batch_size: 1
+learning_rate: 1e-4
+gradient_accumulation_steps: 1024
+weight_decay: 0.01
+adam_epsilon: 1e-6
+adam_betas: "(0.9, 0.98)"
+max_grad_norm: 1.0
+num_train_epochs: 1
+max_steps: 0
+warmup_proportion: 0.1
+warmup_steps: 0
+
+# Optimizer
+optimizer:
+use_nvlamb:
+
+logging_steps: 1
+#save_steps: 50
+#eval_steps: 50
+save_steps: 100
+eval_steps: 100
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O1
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: False
+cpu_offload: False
+move_grads_to_cpu: False
+move_params_to_cpu: False
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:
+
+# Notes
+note:

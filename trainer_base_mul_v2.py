@@ -47,7 +47,7 @@ from general_util.training_utils import set_seed, batch_to_device, unwrap_model,
 
 logger: logging.Logger
 
-transformers.logging.set_verbosity_error()
+transformers.tokenization_utils_base.logging.set_verbosity_error()
 
 
 def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):
@@ -71,10 +71,15 @@ def forward_step(model, inputs: Dict[str, torch.Tensor], cfg, scaler):
     if cfg.fp16:
         with torch.cuda.amp.autocast():
             outputs = model(**inputs)
-            loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
+            # loss = outputs["loss"]  # model outputs are always tuple in transformers (see doc)
     else:
         outputs = model(**inputs)
-        loss = outputs["loss"]  # model outputs are always tuple in pytorch-transformers (see doc)
+        # loss = outputs["loss"]  # model outputs are always tuple in pytorch-transformers (see doc)
+
+    if isinstance(outputs, tuple):
+        loss = outputs[0]
+    else:
+        loss = outputs["loss"]
 
     if cfg.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
@@ -332,7 +337,7 @@ def evaluate(cfg, model, tokenizer: PreTrainedTokenizer, prefix="", _split="dev"
 
         with torch.no_grad():
             with torch.cuda.amp.autocast():
-                outputs = model(**batch)
+                outputs = model(**batch, return_dict=True)
             # logits = outputs["logits"].detach().cpu()
             probs = outputs["logits"].softmax(dim=-1).detach().cpu().float()
             prob, pred = probs.max(dim=-1)

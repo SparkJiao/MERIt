@@ -1,0 +1,102 @@
+hydra:
+  run:
+    dir: ./
+
+train_file: /home/share/jiaofangkai/wiki_erica_path/simple/union/train_distant.path_simple.train.0.pkl
+dev_file: /home/share/jiaofangkai/wiki_erica_path/simple/union/train_distant.path_simple.dev.pkl
+test_file:
+
+# Model
+model:
+  _target_: models.roberta_baseline.RobertaForMultipleChoiceForPreTrain.from_pretrained
+  mlp_hidden_size: 2048  # For large model.
+
+# Data loading
+read_tensor:
+  _target_: dataset.wiki_entity_path_v8_2_random.convert_examples_into_features
+  max_neg_num: 3
+  aug_num: 1
+  max_seq_length: 384
+  shuffle_context: True
+  min_rep_num: 5
+  geo_p: 0.4
+  deduct_ratio: 1.0
+  context_ratio: 1.0
+  remove_context: False
+  keep_num: False
+  num_workers: 64
+
+extended_vocab:
+#  _target_: datasets.wiki_entity_path.get_num_extended_tokens
+
+# Data collator
+collator:
+  _target_: dataset.wiki_entity_path_v8.WikiPathDatasetCollatorWithContext
+  max_seq_length: 320
+  tokenizer: pretrained-models/roberta-large
+  mlm_probability: 0.15
+  max_option_num: 4
+  swap: True
+
+# Dataloader
+num_workers: 4
+prefetch_factor: 2
+
+
+model_name_or_path: pretrained-models/roberta-large
+pretrain:
+
+output_dir: experiments/roberta.large.wiki_erica_path_simple_v8.2.2.1aug.ctx.random.noise_num.1k.TeslaT4
+
+do_train: Train
+evaluate_during_training: True
+
+do_eval: False
+eval_sub_path:
+
+do_preprocess: False
+
+# Training hyper-parameters
+# ============= For large model =============
+per_gpu_train_batch_size: 2
+per_gpu_eval_batch_size: 2
+#per_gpu_train_batch_size: 8
+#per_gpu_eval_batch_size: 8
+learning_rate: 1e-4
+gradient_accumulation_steps: 512
+weight_decay: 0.01
+adam_epsilon: 1e-6
+adam_betas: "(0.9, 0.98)"
+max_grad_norm: 5.0
+num_train_epochs: 5
+max_steps: 1010
+warmup_proportion: 0.1
+warmup_steps: 0
+
+# Optimizer
+optimizer: lamb
+use_nvlamb: True
+
+logging_steps: 1
+save_steps: 100
+eval_steps: 100
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O1
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: False
+cpu_offload: False
+move_grads_to_cpu: False
+move_params_to_cpu: False
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:
+
+# Notes
+note:

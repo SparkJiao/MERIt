@@ -1,0 +1,140 @@
+hydra:
+  run:
+    dir: ./
+
+train_file: reclor_data/train.json
+dev_file: reclor_data/val.json
+test_file: reclor_data/test.json
+
+# Model
+model:
+  _target_: models.deberta.DebertaV2ForMultipleChoice.from_pretrained
+  fs_checkpoint: False
+  fs_checkpoint_cpu_offload: False
+  activation_checkpoint: True  # Tested with FSDP, deepspeed should be tested on 81 server. // OOM during evaluation.
+#  return_dict: False
+
+# Data loading
+read_tensor:
+  _target_: dataset.reclor_sentence.convert_examples_into_features
+  max_seq_length: 256
+  num_workers: 2
+
+
+# Data collator
+collator:
+  _target_: dataset.collators.ReClorSentenceCollator
+
+# Dataloader
+num_workers: 2
+prefetch_factor: 2
+
+model_name_or_path: pretrained-models/deberta-v2-xlarge
+pretrain:
+
+#output_dir: experiments/deberta.v2.xlarge.2.0.w4.TitanXP.s${seed}
+#output_dir: experiments/deberta.v2.xlarge.2.1.w4.TitanXP.s${seed}
+#output_dir: experiments/deberta.v2.xlarge.2.2.w4.TitanXP.s${seed}
+#output_dir: experiments/deberta.v2.xlarge.2.3.w4.TitanXP.s${seed}
+#output_dir: experiments/deberta.v2.xlarge.2.4.w4.TitanXP.s${seed}
+#output_dir: experiments/deberta.v2.xlarge.2.4.w2.TitanXP.s${seed}
+output_dir: experiments/deberta.v2.xlarge.2.5.w2.TitanXP.s${seed}  # betas [0.9, 0.98] -> [0.9, 0.999]
+
+#output_dir: experiments/deberta.v2.xlarge.2.0.w4.TitanXP.s${seed}.accelerator
+
+do_train: True
+evaluate_during_training: True
+
+do_eval: True
+eval_sub_path:
+
+# Training hyper-parameters
+per_gpu_train_batch_size: 1
+per_gpu_eval_batch_size: 1
+learning_rate: 5e-6
+#learning_rate: 1e-4
+gradient_accumulation_steps: 6
+#gradient_accumulation_steps: 24
+weight_decay: 0.01
+#adam_epsilon: 1e-6
+adam_epsilon: 1e-8
+adam_betas: "(0.9, 0.98)"
+max_grad_norm: 0.0
+num_train_epochs: 10
+max_steps: 0
+warmup_proportion: 0.06
+warmup_steps: 0
+
+optimizer:
+bit_training:
+multi_tensor:
+
+logging_steps: 5
+save_steps: -1
+save_best: True
+eval_steps: 100
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O2
+
+# Prediction config
+prediction_cfg:
+  metric: "acc"
+  measure: 1
+  best_checkpoint:
+  best_result:
+
+# deepspeed config
+ds_cfg:
+  train_micro_batch_size_per_gpu: ${per_gpu_train_batch_size}
+  gradient_accumulation_steps: ${gradient_accumulation_steps}
+  optimizer:
+    type: AdamW
+    params:
+      lr: ${learning_rate}
+      betas: [0.9, 0.999]
+      eps: ${adam_epsilon}
+      weight_decay: ${weight_decay}
+  scheduler:
+    type: WarmupDecayLR
+    params:
+      total_num_steps:
+      warmup_max_lr: ${learning_rate}
+      warmup_num_steps:
+      warmup_type: linear
+  gradient_clipping: 1.0
+  fp16:
+    enabled: ${fp16}
+    initial_scale_power: 14
+  zero_optimization:
+    stage: 2
+    offload_optimizer:
+      device: cpu
+      pin_memory: True
+#    offload_param:  # if use zero stage-3 with offload_param, please set ``return_dict=False`` to model.
+#      device: cpu
+#      pin_memory: True
+#  activation_checkpointing:
+#    partition_activations: True
+#    cpu_checkpointing: True
+#    contiguous_memory_optimization: False
+#    number_checkpoints: False
+#    synchronize_checkpoint_boundary: False
+#    profile: False
+  steps_per_print: 30
+
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: True
+move_grads_to_cpu: True
+move_params_to_cpu: True
+flatten_parameters: True
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:
+world_size:

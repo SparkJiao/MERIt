@@ -1,0 +1,106 @@
+hydra:
+  run:
+    dir: ./
+
+train_file: /home/share/jiaofangkai/LogiQA-dataset/train-reclor-form.json
+dev_file: /home/share/jiaofangkai/LogiQA-dataset/val-reclor-form.json
+test_file: /home/share/jiaofangkai/LogiQA-dataset/test-reclor-form.json
+
+# Model
+model:
+  _target_: models.roberta_baseline.RobertaForMultipleChoice.from_pretrained
+#  _target_: models.roberta_baseline.RobertaForMultipleChoiceForZeroShot.from_pretrained
+#  mlp_hidden_size: 2048
+#  re_init_cls: True
+  fs_checkpoint: False
+  fs_checkpoint_offload_to_cpu: False
+  fs_checkpoint_maintain_forward_counter: False
+
+# Data loading
+read_tensor:
+  _target_: dataset.reclor_sentence.convert_examples_into_features
+  max_seq_length: 256
+#  max_seq_length: 220
+  num_workers: 2
+
+# Data collator
+collator:
+  _target_: dataset.collators.ReClorSentenceCollator
+
+# Dataloader
+num_workers: 4
+prefetch_factor: 2
+
+#model_name_or_path: pretrained-models/roberta-large
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v8.1.1.V100-16g/checkpoint-500
+model_name_or_path: experiments/roberta.large.wiki_erica_path_v8.1.1.2080Ti/checkpoint-500
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v8.1.1.2080Ti/checkpoint-1000
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v8.1.1.V100-16g/checkpoint-1000
+pretrain:
+
+#output_dir: experiments/logiqa.roberta.large.2080ti.w4.v2.0
+#output_dir: experiments/logiqa.roberta.large.2080ti.w3.v2.1
+
+#output_dir: experiments/logiqa.roberta.large.path_v8.1.1.2080ti-cp500.w4.v3.0.2080Ti.s${seed}  # batch size = 16 / lr = 8e-6
+
+#output_dir: experiments/logiqa.roberta.large.wiki_erica_path_v8.1.1.2080ti-cp500.w3.v2.1
+
+output_dir: experiments/logiqa.roberta.large.path_v8.1.1.2080ti-cp500.w1.v2.3.T4.s${seed}
+
+
+do_train: True
+#do_train: False
+evaluate_during_training: True
+
+do_eval: False
+#do_eval: True
+eval_sub_path: checkpoint-1800
+
+# Training hyper-parameters
+per_gpu_train_batch_size: 3
+per_gpu_eval_batch_size: 3
+#learning_rate: 1e-5
+learning_rate: 5e-6
+#learning_rate: 8e-6
+#learning_rate: 5e-6
+#learning_rate: 2e-5
+#gradient_accumulation_steps: 12
+#gradient_accumulation_steps: 4
+#gradient_accumulation_steps: 16
+gradient_accumulation_steps: 8
+#gradient_accumulation_steps: 6
+#gradient_accumulation_steps: 2
+weight_decay: 0.01
+adam_epsilon: 1e-6
+adam_betas: "(0.9, 0.98)"
+max_grad_norm: 0.0
+#max_grad_norm: 1.0
+num_train_epochs: 10
+#num_train_epochs: 14
+max_steps: 0
+warmup_proportion: 0.1
+#warmup_proportion: 0.06
+warmup_steps: 0
+
+
+logging_steps: 5
+save_steps: 200
+eval_steps: 200
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O1
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: False
+cpu_offload: False
+move_grads_to_cpu: False
+move_params_to_cpu: False
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:
+world_size:

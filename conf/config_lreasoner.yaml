@@ -1,0 +1,133 @@
+hydra:
+  run:
+    dir: ./
+
+train_file: reclor_data/train.json
+dev_file: reclor_data/val.json
+test_file: reclor_data/test.json
+
+# Model
+model:
+  _target_: models.roberta_baseline.RobertaForMultipleChoiceLReasoner.from_pretrained
+  fs_checkpoint: False
+  fs_checkpoint_offload_to_cpu: False
+  fs_checkpoint_maintain_forward_counter: False
+
+# Data loading
+read_tensor:
+  _target_: dataset.reclor_lreasoner.convert_examples_into_features
+  max_seq_length: 288
+  whether_extend_context: True
+  data_dir: reclor_data/
+  version: 5
+  negative_version: 19
+  negative_extend_version: 195
+  num_workers: 4
+
+extended_vocab: 4
+
+# Data collator
+collator:
+  _target_: dataset.reclor_lreasoner.LReasonerCollator
+  add_orig: True
+  add_contras: True
+
+# Dataloader
+num_workers: 4
+prefetch_factor: 2
+
+model_name_or_path: pretrained-models/roberta-large
+#model_name_or_path: pretrained-models/albert-xxlarge-v2
+#model_name_or_path: pretrained-models/roberta-large-mnli
+#model_name_or_path: pretrained-models/roberta-base
+#model_name_or_path: pretrained-models/ERICA_pretrained/pretrained-models/roberta_ep_rp_hf
+#pretrain: "pretrained-models/ERICA_pretrained/pretrained-models/roberta_ep_rp.bin"
+
+
+# Wiki path pretrain v8.0
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v8.1.1.V100-16g/checkpoint-500
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v8.1.1.2080Ti/checkpoint-500
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v8.1.1.2080Ti/checkpoint-1000
+#model_name_or_path: experiments/roberta.large.wiki_erica_path_v8.1.1.V100-16g/checkpoint-1000
+
+# MultiNLI transfer learning test
+#model_name_or_path: experiments/mnli.roberta.large.path.w2.v1.0/checkpoint-35000
+
+pretrain:
+
+
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.2080ti-cp500.5.0.w4.2080Ti  # P-tuning
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.2080ti-cp500.2.0.norm.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.2080ti-cp1000.3.0.w4.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.2080ti-cp1000.2.0.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.2080ti-cp1000.2.0.w4.2080Ti
+
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.v100-cp1000.2.0.TitanXP
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.v100-cp1000.2.1.TitanXP
+
+
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.2080ti-cp500.lreasoner.v1.0.w4.TeslaT4
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.2080ti-cp500.lreasoner.v1.1.w4.TeslaT4  # Remove contrastive learning + lower learning rate
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.2080ti-cp500.lreasoner.v1.2.w4.TeslaT4  # larger learning rate
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.1.1.2080ti-cp500.lreasoner.v1.3.w4.TeslaT4  # lower batch size
+
+# Baseline
+#output_dir: experiments/roberta.large.lreasoner.v1.0.w4.TeslaT4
+#output_dir: experiments/roberta.large.lreasoner.v1.0.w4.2080Ti
+output_dir: experiments/roberta.large.lreasoner.v1.1.w4.2080Ti
+
+do_train: True
+#do_train: False
+evaluate_during_training: True
+
+do_eval: False
+#do_eval: True
+eval_sub_path: checkpoint-1800
+
+# Training hyper-parameters
+per_gpu_train_batch_size: 1
+per_gpu_eval_batch_size: 1
+learning_rate: 1e-5
+#learning_rate: 8e-6
+#learning_rate: 5e-6
+#learning_rate: 2e-5
+#gradient_accumulation_steps: 12
+#gradient_accumulation_steps: 4
+#gradient_accumulation_steps: 16
+#gradient_accumulation_steps: 8
+#gradient_accumulation_steps: 3
+gradient_accumulation_steps: 6
+weight_decay: 0.01
+adam_epsilon: 1e-6
+adam_betas: "(0.9, 0.98)"
+max_grad_norm: 0.0
+#max_grad_norm: 1.0
+num_train_epochs: 10
+#num_train_epochs: 14
+max_steps: 0
+warmup_proportion: 0.1
+#warmup_proportion: 0.06
+warmup_steps: 0
+
+
+logging_steps: 5
+save_steps: 100
+eval_steps: 100
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O1
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: False
+cpu_offload: False
+move_grads_to_cpu: False
+move_params_to_cpu: False
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:
+world_size:

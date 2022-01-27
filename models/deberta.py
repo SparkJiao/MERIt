@@ -2,17 +2,44 @@ from abc import ABC
 from typing import List
 
 import torch
+from fairscale.nn.checkpoint.checkpoint_activations import checkpoint_wrapper
 from torch import nn, Tensor
-from torch.nn import CrossEntropyLoss
+from torch.nn import CrossEntropyLoss, LayerNorm
 from transformers.modeling_outputs import MultipleChoiceModelOutput
 from transformers.models.deberta_v2.modeling_deberta_v2 import DebertaV2PreTrainedModel, DebertaV2Model, DebertaV2Config, \
-    ContextPooler, StableDropout, DebertaV2OnlyMLMHead, ACT2FN, DebertaV2LMPredictionHead, DebertaV2Encoder
+    ContextPooler, StableDropout, ACT2FN, DebertaV2Encoder
 
 from general_util.logger import get_child_logger
 from general_util.mixin import LogMixin
 from modules import layers
 
 logger = get_child_logger("DeBERTaV2")
+
+
+class BertLMPredictionHead(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.embedding_size = getattr(config, 'embedding_size', config.hidden_size)
+        self.dense = nn.Linear(config.hidden_size, self.embedding_size)
+        self.transform_act_fn = ACT2FN[config.hidden_act] if isinstance(config.hidden_act, str) else config.hidden_act
+
+        self.LayerNorm = LayerNorm(self.embedding_size, config.layer_norm_eps, elementwise_affine=True)
+
+        # The output weights are the same as the input embeddings, but there is
+        # an output-only bias for each token.
+        self.decoder = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        self.bias = nn.Parameter(torch.zeros(config.vocab_size))
+
+        # Need a link between the two variables so that the bias is correctly resized with `resize_token_embeddings`
+        self.decoder.bias = self.bias
+
+    def forward(self, hidden_states):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.transform_act_fn(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states)
+        logits = self.decoder(hidden_states)
+        return logits
 
 
 # Copied from https://github.com/microsoft/DeBERTa/blob/master/DeBERTa/apps/models/masked_language_model.py#L30-L82
@@ -22,38 +49,34 @@ class EnhancedMaskDecoder(torch.nn.Module):
         self.config = config
         self.vocab_size = config.vocab_size
 
+        self.add_enhanced_encoder = getattr(config, "add_enhanced_decoder", True)
         self.position_biased_input = getattr(config, 'position_biased_input', True)
-        self.lm_head = DebertaV2LMPredictionHead(config)
+        self.lm_head = BertLMPredictionHead(config)
 
     def forward(self, encoded_layers: List[Tensor], z_states: Tensor, attention_mask: Tensor, encoder: DebertaV2Encoder,
                 mlm_labels: Tensor, relative_pos=None):
-        mlm_ctx_layers = self.emd_context_layer(encoded_layers, z_states, attention_mask, encoder, relative_pos=relative_pos)
+        if self.add_enhanced_encoder:
+            mlm_ctx_layers = self.emd_context_layer(encoded_layers, z_states, attention_mask, encoder, relative_pos=relative_pos)
+        else:
+            mlm_ctx_layers = encoded_layers[-1]
         loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-1)
 
         mlm_labels = mlm_labels.reshape(-1)
         mlm_index = (mlm_labels > 0).nonzero().view(-1)
-        mlm_ctx_states = mlm_ctx_layers[-1].index_select(0, index=mlm_index)
+        mlm_ctx_states = mlm_ctx_layers[-1].reshape(-1, mlm_ctx_layers[-1].size(-1)).index_select(0, index=mlm_index)
         mlm_target_ids = mlm_labels.index_select(0, index=mlm_index)
-
         mlm_logits = self.lm_head(mlm_ctx_states)
         mlm_loss = loss_fct(mlm_logits.reshape(-1, self.vocab_size), mlm_target_ids)
 
-        return mlm_logits, mlm_loss
+        return mlm_logits, mlm_target_ids, mlm_loss
 
     def emd_context_layer(self, encoded_layers: List[Tensor], z_states: Tensor, attention_mask: Tensor,
                           encoder: DebertaV2Encoder, relative_pos=None):
-        # if attention_mask.dim() <= 2:
-        #     extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
-        #     att_mask = extended_attention_mask.byte()
-        #     attention_mask = att_mask * att_mask.squeeze(-2).unsqueeze(-1)
-        # elif attention_mask.dim() == 3:
-        #     attention_mask = attention_mask.unsqueeze(1)
         attention_mask = encoder.get_attention_mask(attention_mask)
-        # target_mask = target_ids > 0
         hidden_states = encoded_layers[-2]
         if not self.position_biased_input:
             enc_layers = [encoder.layer[-1] for _ in range(2)]
-            z_states += hidden_states
+            z_states = z_states + hidden_states
             query_states = z_states
             query_mask = attention_mask
             outputs = []
@@ -61,7 +84,7 @@ class EnhancedMaskDecoder(torch.nn.Module):
 
             for layer in enc_layers:
                 # TODO: pass relative pos ids
-                output = layer(hidden_states, query_mask, return_att=False, query_states=query_states, relative_pos=relative_pos,
+                output = layer(hidden_states, query_mask, query_states=query_states, relative_pos=relative_pos,
                                rel_embeddings=rel_embeddings)
                 query_states = output
                 outputs.append(query_states)
@@ -69,14 +92,6 @@ class EnhancedMaskDecoder(torch.nn.Module):
             outputs = [encoded_layers[-1]]
             raise RuntimeError()  # For debug. ``position_biased_input==False``
 
-        # _mask_index = (target_ids > 0).view(-1).nonzero().view(-1)
-
-        # def flatten_states(q_states):
-        #     q_states = q_states.view((-1, q_states.size(-1)))
-        #     q_states = q_states.index_select(0, _mask_index)
-        #     return q_states
-
-        # return [flatten_states(q) for q in outputs]
         return outputs
 
 
@@ -91,7 +106,6 @@ class ContextPoolerE(nn.Module):
     def forward(self, hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
-
         context_token = hidden_states[:, 0]
         context_token = self.dropout(context_token)
         pooled_output = self.dense(context_token)
@@ -103,21 +117,67 @@ class ContextPoolerE(nn.Module):
         return self.config.hidden_size
 
 
+def wrap_activation_checkpoint(encoder: DebertaV2Encoder, config: DebertaV2Config, checkpoint: bool = False,
+                               fs_checkpoint: bool = False, fs_checkpoint_cpu_offload: bool = False):
+    if checkpoint:  # Requires ``transformers >= 4.12.0``
+        # return ActivationCheckpointHelper(config)
+        encoder.gradient_checkpointing = True
+        return encoder
+
+    if fs_checkpoint:
+        wrapped_layers = nn.ModuleList([
+            checkpoint_wrapper(encoder.layer[i], offload_to_cpu=fs_checkpoint_cpu_offload)
+            for i in range(config.num_hidden_layers)
+        ])
+        encoder.layer = wrapped_layers
+        return encoder
+
+    return encoder
+
+
 class DebertaV2ForMultipleChoicePreTrain(DebertaV2PreTrainedModel, LogMixin, ABC):
-    def __init__(self, config: DebertaV2Config, mlp_hidden_size: int = 768):
+    def __init__(self, config: DebertaV2Config,
+                 mlp_hidden_size: int = 768,
+                 add_enhanced_decoder: bool = True,
+                 use_stable_embedding: bool = False,
+                 activation_checkpoint: bool = False,
+                 fs_checkpoint: bool = False,
+                 fs_checkpoint_offload_to_cpu: bool = False,
+                 fs_checkpoint_start_layer_id: int = 0):
         super().__init__(config)
+
+        config.update({
+            "mlp_hidden_size": mlp_hidden_size,
+            "add_enhanced_decoder": add_enhanced_decoder,
+            "use_stable_embedding": use_stable_embedding
+        })
 
         self.config = config
 
         self.deberta = DebertaV2Model(config)
         # Hack here. Since ``position_based_input==False``, the weights won't be loaded.
         self.embedding_size = getattr(config, "embedding_size", config.hidden_size)
-        self.deberta.embeddings.position_embeddings = nn.Embedding(config.max_position_embeddings, self.embedding_size)
+        # self.deberta.embeddings.position_embeddings = nn.Embedding(config.max_position_embeddings, self.embedding_size)
+        self.position_embeddings = nn.Embedding(config.max_position_embeddings, self.embedding_size)
         self.lm_predictions = EnhancedMaskDecoder(config)
+
+        if use_stable_embedding:
+            import bitsandbytes as bnb
+
+            pad_token_id = getattr(config, "pad_token_id", 0)
+            self.deberta.embeddings.word_embeddings = bnb.nn.StableEmbedding(config.vocab_size,
+                                                                             self.embedding_size,
+                                                                             padding_idx=pad_token_id)
+            self.deberta.embeddings.position_embeddings = bnb.nn.StableEmbedding(config.max_position_embeddings, self.embedding_size)
 
         self.pooler = ContextPoolerE(config, mlp_hidden_size=mlp_hidden_size)
         self.dropout = StableDropout(config.hidden_dropout_prob)
-        self.cls = nn.Linear(config.hidden_size, 1)
+        self.cls = nn.Linear(mlp_hidden_size, 1)
+
+        self.deberta.encoder = wrap_activation_checkpoint(self.deberta.encoder, config,
+                                                          checkpoint=activation_checkpoint,
+                                                          fs_checkpoint=fs_checkpoint,
+                                                          fs_checkpoint_cpu_offload=fs_checkpoint_offload_to_cpu)
 
         self.init_weights()
         self.init_metric("loss", "acc", "mlm_loss", "mlm_acc", "cls_loss")
@@ -132,9 +192,9 @@ class DebertaV2ForMultipleChoicePreTrain(DebertaV2PreTrainedModel, LogMixin, ABC
         return self.deberta.embeddings.word_embeddings
 
     def get_position_embeddings(self, seq_length):
-        position_ids = self.deberta.embeddings.position_ids[:, :seq_length]
-        position_embeddings = self.deberta.embeddings.position_embeddings(position_ids.long())
-        return position_embeddings
+        position_ids = self.deberta.embeddings.position_ids[:, :seq_length].to(self.position_embeddings.weight.device)
+        position_emb = self.position_embeddings(position_ids)
+        return position_emb
 
     @staticmethod
     def fold_tensor(x: Tensor):
@@ -154,13 +214,13 @@ class DebertaV2ForMultipleChoicePreTrain(DebertaV2PreTrainedModel, LogMixin, ABC
         encoded_layers = mlm_outputs[1]
         z_states = self.get_position_embeddings(mlm_input_ids.size(1))
 
-        mlm_logits, mlm_loss = self.lm_predictions(encoded_layers=encoded_layers,
-                                                   z_states=z_states,
-                                                   attention_mask=mlm_attention_mask,
-                                                   encoder=self.deberta.encoder,
-                                                   mlm_labels=mlm_labels,
-                                                   relative_pos=None)
-        return mlm_logits, mlm_loss
+        mlm_logits, mlm_target_ids, mlm_loss = self.lm_predictions(encoded_layers=encoded_layers,
+                                                                   z_states=z_states,
+                                                                   attention_mask=mlm_attention_mask,
+                                                                   encoder=self.deberta.encoder,
+                                                                   mlm_labels=mlm_labels,
+                                                                   relative_pos=None)
+        return mlm_logits, mlm_target_ids, mlm_loss
 
     def forward(self,
                 input_ids: Tensor,
@@ -191,9 +251,8 @@ class DebertaV2ForMultipleChoicePreTrain(DebertaV2PreTrainedModel, LogMixin, ABC
             token_type_ids=token_type_ids,
             return_dict=return_dict,
         )
-        pooled_output = outputs[0][:, 0]
 
-        logits = self.cls(self.dropout(self.pooler(pooled_output)))
+        logits = self.cls(self.dropout(self.pooler(outputs[0])))
         reshaped_logits = logits.view(-1, num_choices)
 
         loss = 0.
@@ -206,7 +265,7 @@ class DebertaV2ForMultipleChoicePreTrain(DebertaV2PreTrainedModel, LogMixin, ABC
                 if mlm_attention_mask is None:
                     mlm_attention_mask = attention_mask.reshape(reshaped_logits.size(0), num_choices, -1)[:, 0]
 
-                mlm_scores, mlm_loss = self.mlm_forward(mlm_input_ids, mlm_attention_mask, mlm_labels, return_dict=return_dict)
+                mlm_scores, mlm_labels, mlm_loss = self.mlm_forward(mlm_input_ids, mlm_attention_mask, mlm_labels, return_dict=return_dict)
                 loss = loss + mlm_loss
             else:
                 mlm_scores = None
@@ -236,17 +295,28 @@ class DebertaV2ForMultipleChoicePreTrain(DebertaV2PreTrainedModel, LogMixin, ABC
 
 
 class DebertaV2ForMultipleChoice(DebertaV2PreTrainedModel, LogMixin, ABC):
-    def __init__(self, config: DebertaV2Config):
+    def __init__(self, config: DebertaV2Config, override_pooler: bool = False,
+                 activation_checkpoint: bool = False,
+                 fs_checkpoint: bool = False,
+                 fs_checkpoint_cpu_offload: bool = False):
         super().__init__(config)
 
-        num_labels = getattr(config, "num_labels", 1)
-        self.num_labels = num_labels
+        self.config = config
+        self.override_pooler = override_pooler
 
         self.deberta = DebertaV2Model(config)
-        self.pooler = ContextPooler(config)
-        output_dim = self.pooler.output_dim
+        self.deberta.encoder = wrap_activation_checkpoint(self.deberta.encoder, config, checkpoint=activation_checkpoint,
+                                                          fs_checkpoint=fs_checkpoint, fs_checkpoint_cpu_offload=fs_checkpoint_cpu_offload)
 
-        self.classifier = nn.Linear(output_dim, num_labels)
+        if self.override_pooler:
+            mlp_hidden_size = getattr(config, "mlp_hidden_size", config.hidden_size)
+            self.pooler = ContextPoolerE(config, mlp_hidden_size=mlp_hidden_size)
+            self.cls = nn.Linear(mlp_hidden_size, 1)
+        else:
+            self.n_pooler = ContextPooler(config)
+            output_dim = self.n_pooler.output_dim
+            self.classifier = nn.Linear(output_dim, 1)
+
         drop_out = getattr(config, "cls_dropout", None)
         drop_out = self.config.hidden_dropout_prob if drop_out is None else drop_out
         self.dropout = StableDropout(drop_out)
@@ -301,9 +371,14 @@ class DebertaV2ForMultipleChoice(DebertaV2PreTrainedModel, LogMixin, ABC):
         )
 
         encoder_layer = outputs[0]
-        pooled_output = self.pooler(encoder_layer)
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output).reshape(-1, num_choices)
+        if self.override_pooler:
+            pooled_output = self.pooler(encoder_layer)
+            pooled_output = self.dropout(pooled_output)
+            logits = self.cls(pooled_output).reshape(-1, num_choices)
+        else:
+            pooled_output = self.n_pooler(encoder_layer)
+            pooled_output = self.dropout(pooled_output)
+            logits = self.classifier(pooled_output).reshape(-1, num_choices)
 
         loss = None
         if labels is not None:
