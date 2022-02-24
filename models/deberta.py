@@ -139,6 +139,7 @@ class DebertaV2ForMultipleChoicePreTrain(DebertaV2PreTrainedModel, LogMixin, ABC
     def __init__(self, config: DebertaV2Config,
                  mlp_hidden_size: int = 768,
                  add_enhanced_decoder: bool = True,
+                 mlm_alpha: float = 1.0,
                  use_stable_embedding: bool = False,
                  activation_checkpoint: bool = False,
                  fs_checkpoint: bool = False,
@@ -149,6 +150,7 @@ class DebertaV2ForMultipleChoicePreTrain(DebertaV2PreTrainedModel, LogMixin, ABC
         config.update({
             "mlp_hidden_size": mlp_hidden_size,
             "add_enhanced_decoder": add_enhanced_decoder,
+            "mlm_alpha": mlm_alpha,
             "use_stable_embedding": use_stable_embedding
         })
 
@@ -181,6 +183,8 @@ class DebertaV2ForMultipleChoicePreTrain(DebertaV2PreTrainedModel, LogMixin, ABC
 
         self.init_weights()
         self.init_metric("loss", "acc", "mlm_loss", "mlm_acc", "cls_loss")
+
+        self.mlm_alpha = mlm_alpha
 
     def get_output_embeddings(self):
         return self.lm_predictions.lm_head.decoder
@@ -266,7 +270,7 @@ class DebertaV2ForMultipleChoicePreTrain(DebertaV2PreTrainedModel, LogMixin, ABC
                     mlm_attention_mask = attention_mask.reshape(reshaped_logits.size(0), num_choices, -1)[:, 0]
 
                 mlm_scores, mlm_labels, mlm_loss = self.mlm_forward(mlm_input_ids, mlm_attention_mask, mlm_labels, return_dict=return_dict)
-                loss = loss + mlm_loss
+                loss = loss + self.mlm_alpha * mlm_loss
             else:
                 mlm_scores = None
                 mlm_loss = None

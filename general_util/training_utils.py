@@ -49,10 +49,10 @@ def initialize_optimizer(cfg: DictConfig, grouped_parameters: List[Dict]):
                                  eps=cfg.adam_epsilon,
                                  max_unorm=cfg.max_grad_norm)
         else:
-            try:
-                from apex.optimizers.fused_mixed_precision_lamb import FusedMixedPrecisionLamb as FusedLAMB
-            except ImportError:
-                from apex.optimizers.fused_lamb import FusedLAMB
+            # try:
+            #     from apex.optimizers.fused_mixed_precision_lamb import FusedMixedPrecisionLamb as FusedLAMB
+            # except ImportError:
+            from apex.optimizers.fused_lamb import FusedLAMB
 
             optimizer = FusedLAMB(grouped_parameters,
                                   lr=cfg.learning_rate,

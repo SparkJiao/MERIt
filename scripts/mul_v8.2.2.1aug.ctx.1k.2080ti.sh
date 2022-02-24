@@ -48,9 +48,9 @@
 #  python reclor_trainer_base.py --seed=$seed -cn p_ft_v8_2_2_1aug_ctx_1k
 #done;
 
-for seed in 42 43 44 45 4321; do
-  python -m torch.distributed.launch --nproc_per_node 2 reclor_trainer_base.py --seed=${seed} -cn p_ft_v8_2_2_1aug_ctx_1k
-done;
+#for seed in 42 43 44 45 4321; do
+#  python -m torch.distributed.launch --nproc_per_node 2 reclor_trainer_base.py --seed=${seed} -cn p_ft_v8_2_2_1aug_ctx_1k
+#done;
 
 
 # ========================== Prediction ===============================
@@ -74,3 +74,15 @@ done;
 #python reclor_trainer_base.py --seed=45 --eval_sub_path=checkpoint-1000 -cn p_ft_v8_2_2_1aug_ctx_1k
 #
 #python reclor_trainer_base.py --seed=4321 --eval_sub_path=checkpoint-1600 -cn p_ft_v8_2_2_1aug_ctx_1k
+
+#for seed in 42 43 44 45 4321; do
+#  python -m torch.distributed.launch --nproc_per_node 2 reclor_trainer_base_v2.py seed=${seed} -cp conf/roberta/original -cn ft_et0_v8_2_2_1aug_ctx_1k
+#done;
+
+#seed=46
+#seed=43
+#python -m torch.distributed.launch --nproc_per_node 2 reclor_trainer_base_v2.py seed=${seed} -cp conf/roberta/original -cn ft_et0_v8_2_2_1aug_ctx_1k
+
+for seed in 42 43 44 45 4321; do
+  python -m torch.distributed.launch --nproc_per_node 2 reclor_trainer_base_v2.py seed=${seed} -cp conf/roberta -cn p_ft_v8_2_2_1aug_ctx_fix_v3
+done;

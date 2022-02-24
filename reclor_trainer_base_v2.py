@@ -46,7 +46,7 @@ from general_util.training_utils import batch_to_device, unwrap_model, set_seed,
 
 logger: logging.Logger
 
-transformers.logging.set_verbosity_error()
+# transformers.logging.set_verbosity_error()
 
 
 def save_model(model: Union[torch.nn.Module, FullyShardedDDP], cfg: DictConfig, output_dir: str, tokenizer: PreTrainedTokenizer = None):

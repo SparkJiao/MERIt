@@ -1,0 +1,206 @@
+hydra:
+  run:
+    dir: ./
+
+#train_file: /home/share/jiaofangkai/wiki_erica_path/v7/union/train_distant.path_v7.train.0.pkl
+#dev_file: /home/share/jiaofangkai/wiki_erica_path/v7/union/train_distant.path_v7.dev.pkl
+#train_file: /home/share/jiamengzhao/wiki_erica_path/v7/union/train_distant.path_v7.train.0.pkl
+#dev_file: /home/share/jiamengzhao/wiki_erica_path/v7/union/train_distant.path_v7.dev.pkl
+#train_file: /home/jiaofangkai/wiki_erica_path/v7/train_distant.path_v7.train.0.pkl
+#dev_file: /home/jiaofangkai/wiki_erica_path/v7/train_distant.path_v7.dev.pkl
+#train_file: /home/share/jiaofangkai/wiki_erica_path/v7/train_distant.path_v7.train.0.pkl
+#dev_file: /home/share/jiaofangkai/wiki_erica_path/v7/train_distant.path_v7.dev.pkl
+train_file: wiki_erica_path/v7/union/train_distant.path_v7.train.0.pkl
+dev_file: wiki_erica_path/v7/union/train_distant.path_v7.dev.pkl
+test_file:
+
+# Model
+model:
+  _target_: models.deberta.DebertaV2ForMultipleChoicePreTrain.from_pretrained
+  mlp_hidden_size: 3072  # For v2-xlarge
+  fs_checkpoint: False
+  fs_checkpoint_offload_to_cpu: False
+#  activation_checkpoint: True
+#  return_dict: False
+
+# Data loading
+read_tensor:
+  _target_: dataset.wiki_entity_path_v8_2.convert_examples_into_features
+  max_neg_num: 3
+  aug_num: 1
+  max_seq_length: 256
+  shuffle_context: True
+  min_rep_num: 5
+  geo_p: 0.4
+  deduct_ratio: 1.0
+  context_ratio: 1.0
+  num_workers: 32
+
+extended_vocab:
+#  _target_: datasets.wiki_entity_path.get_num_extended_tokens
+
+# Data collator
+collator:
+  _target_: dataset.wiki_entity_path_v8.WikiPathDatasetCollatorWithContext
+  max_seq_length: 256
+  tokenizer: pretrained-models/deberta-v2-xxlarge
+  mlm_probability: 0.15
+  max_option_num: 4
+  swap: True
+
+# Dataloader
+num_workers: 4
+prefetch_factor: 4
+
+model_name_or_path: pretrained-models/deberta-v2-xxlarge
+pretrain:
+
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.TeslaT4.v1.0
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.TitanXP.v1.0
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.2080Ti.v1.0
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.2080Ti.v1.1.s${seed}
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.2080Ti.v1.2.s${seed}
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.2080Ti.v1.2.s${seed}.fsdp
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.titanXP.v1.2.s${seed}
+
+
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.2.s${seed}.fsdp
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.3.s${seed}.fsdp
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.3.w2.s${seed}.fsdp.fused_mixed_prec_lamb
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.3.w2.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.4.w2.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.4.s${seed}.deepspeed
+#output_dir: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.4.w1.s${seed}.fsdp
+
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.4.w2.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.4.w2.s${seed}.fsdp.lamb
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.5.w2.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.6.w4.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.7.w4.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.7.1.w4.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.8.w4.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.8.w4.s${seed}.fsdp.lamb
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.8.1.w4.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.9.w4.s${seed}.fsdp.adamw
+
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.3.w4.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.3.1.w4.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.3.2.w4.s${seed}.fsdp.adamw
+output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.3.3.w4.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.4.w4.s${seed}.fsdp.adamw
+#output_dir: experiments/deberta.v2.xxlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.5.w4.s${seed}.fsdp.adamw
+
+
+do_train: Train
+evaluate_during_training: True
+
+do_eval: False
+eval_sub_path:
+
+do_preprocess: False
+
+# Training hyper-parameters
+# ============= For base model ==========
+#per_gpu_train_batch_size: 4
+#per_gpu_eval_batch_size: 4
+#learning_rate: 1e-4
+# ============= For large model =============
+#per_gpu_train_batch_size: 4
+#per_gpu_eval_batch_size: 4
+per_gpu_train_batch_size: 2
+per_gpu_eval_batch_size: 2
+learning_rate: 1e-5
+#learning_rate: 2e-5
+#learning_rate: 8e-6
+#learning_rate: 5e-6
+#learning_rate: 1e-6
+#learning_rate: 5e-7
+#learning_rate: 5e-5
+gradient_accumulation_steps: 512
+#gradient_accumulation_steps: 1024
+#gradient_accumulation_steps: 2048
+#gradient_accumulation_steps: 128 # For 8bit test only
+weight_decay: 0.01
+adam_epsilon: 1e-6
+#adam_betas: "(0.9, 0.98)"
+adam_betas: "(0.9, 0.999)"
+#max_grad_norm: 5.0
+#max_grad_norm: 3.0
+max_grad_norm: 2.0
+num_train_epochs: 5
+max_steps: 200
+#max_steps: 100
+#warmup_proportion: 0.2
+#warmup_proportion: 0.4
+warmup_proportion:
+#warmup_steps: 50
+warmup_steps: 10
+#warmup_steps: 0
+
+# Optimizer
+optimizer:
+use_nvlamb:
+bit_training:
+multi_tensor:
+
+logging_steps: 1
+save_steps: 50
+eval_steps: 50
+no_cuda: False
+seed: 42
+local_rank: -1
+fp16: True
+fp16_opt_level: O2
+
+ds_cfg:
+  train_micro_batch_size_per_gpu: ${per_gpu_train_batch_size}
+  gradient_accumulation_steps: ${gradient_accumulation_steps}
+  optimizer:
+    type: AdamW
+    params:
+      lr: ${learning_rate}
+      betas: [0.9, 0.999]
+      eps: ${adam_epsilon}
+      weight_decay: ${weight_decay}
+  scheduler:
+    type: WarmupDecayLR
+    params:
+      total_num_steps:
+      warmup_max_lr: ${learning_rate}
+      warmup_num_steps:
+      warmup_type: linear
+  gradient_clipping: ${max_grad_norm}
+  fp16:
+    enabled: ${fp16}
+    initial_scale_power: 12
+  zero_optimization:
+    stage: 3
+#    offload_optimizer:
+#      device: cpu
+#      pin_memory: True
+#    offload_param:
+#      device: cpu
+#      pin_memory: True
+#  activation_checkpointing:
+#    partition_activations: True
+#    cpu_checkpointing: True
+#    contiguous_memory_optimization: False
+#    number_checkpoints: False
+#    synchronize_checkpoint_boundary: False
+#    profile: False
+  steps_per_print: 1024
+
+# fairscale.FullyShardedDDP
+reshard_after_forward: False
+flatten_parameters: True
+move_grads_to_cpu: False
+move_params_to_cpu: False
+
+# Temporary variables
+n_gpu:
+device:
+train_batch_size:
+eval_batch_size:
+
+# Notes
+note:

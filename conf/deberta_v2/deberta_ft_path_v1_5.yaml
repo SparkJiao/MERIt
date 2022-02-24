@@ -9,9 +9,11 @@ test_file: reclor_data/test.json
 # Model
 model:
   _target_: models.deberta.DebertaV2ForMultipleChoice.from_pretrained
+  override_pooler: True
   fs_checkpoint: False
   fs_checkpoint_cpu_offload: False
   activation_checkpoint: False  # Tested with FSDP, deepspeed should be tested on 81 server. // OOM during evaluation.
+#  pooler_dropout: 0.1
 #  return_dict: False
 
 # Data loading
@@ -29,24 +31,11 @@ collator:
 num_workers: 2
 prefetch_factor: 2
 
-model_name_or_path: pretrained-models/deberta-v2-xlarge
+cp_step:
+model_name_or_path: experiments/deberta.v2.xlarge.path.v7_v8.2.2.1aug.ctx.A100.v1.4.w2.s42.fsdp.adamw/checkpoint-${cp_step}
 pretrain:
 
-#output_dir: experiments/deberta.v2.xlarge.2.0.w4.TitanXP.s${seed}
-#output_dir: experiments/deberta.v2.xlarge.2.1.w4.TitanXP.s${seed}
-#output_dir: experiments/deberta.v2.xlarge.2.2.w4.TitanXP.s${seed}
-#output_dir: experiments/deberta.v2.xlarge.2.3.w4.TitanXP.s${seed}
-#output_dir: experiments/deberta.v2.xlarge.2.4.w4.TitanXP.s${seed}
-#output_dir: experiments/deberta.v2.xlarge.2.4.w2.TitanXP.s${seed}
-#output_dir: experiments/deberta.v2.xlarge.2.5.w2.TitanXP.s${seed}  # betas [0.9, 0.98] -> [0.9, 0.999]
-
-#output_dir: experiments/deberta.v2.xlarge.2.0.w4.TitanXP.s${seed}.accelerator
-
-#output_dir: experiments/deberta.v2.xlarge.1.0.w2.A100.s${seed}
-#output_dir: experiments/deberta.v2.xlarge.norm_1.1.0.w2.A100.s${seed}
-output_dir: experiments/deberta.v2.xlarge.norm_1.1.0.fix_lr.w2.A100.s${seed}
-#output_dir: experiments/deberta.v2.xlarge.norm_1.1.4.w2.A100.s${seed}
-#output_dir: experiments/deberta.v2.xlarge.1.0.w2.T4.s${seed}
+output_dir: experiments/deberta.v2.xlarge.path.override_${model.override_pooler}.1.5.w2.A100.cp${cp_step}.s${seed}
 
 do_train: True
 evaluate_during_training: True
@@ -57,16 +46,18 @@ eval_sub_path:
 # Training hyper-parameters
 per_gpu_train_batch_size: 4
 per_gpu_eval_batch_size: 4
-learning_rate: 5e-6
+#learning_rate: 5e-6
+#learning_rate: 3e-6
+#learning_rate: 8e-6
 #learning_rate: 1e-5
-#learning_rate: 1e-4
+learning_rate: 2e-5
 gradient_accumulation_steps: 3
 #gradient_accumulation_steps: 24
 weight_decay: 0.01
 adam_epsilon: 1e-6
 #adam_epsilon: 1e-8
 adam_betas: "(0.9, 0.999)"
-max_grad_norm: 1.0
+max_grad_norm: 0.0
 num_train_epochs: 10
 max_steps: 0
 warmup_proportion: 0.06
