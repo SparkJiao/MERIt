@@ -59,8 +59,8 @@ pretrain:
 
 #output_dir: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.TeslaT4
 #output_dir: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.1aug.2080Ti
-#output_dir: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.1aug.ctx.1k.2080Ti
-output_dir: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.1aug.ctx.1k.2080Ti.8bit
+output_dir: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.1aug.ctx.1k.2080Ti
+#output_dir: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.1aug.ctx.1k.2080Ti.8bit
 #output_dir: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.1aug.ctx.2080Ti
 
 do_train: Train
