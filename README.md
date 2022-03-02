@@ -4,6 +4,8 @@ This is the pytorch implementation of the paper:
 
 **MERIt: Meta-Path Guided Contrastive Learning for Logical Reasoning.** Fangkai Jiao, Yangyang Guo, Xuemeng Song, Liqiang Nie. _Findings of ACL_. 2022.
 
+[paper link](https://arxiv.org/abs/2203.00357)
+
 ## Project Structure
 
 ```
@@ -44,13 +46,13 @@ You can also pre-train the models by yourself as following.
 ### Data Preprocess
 
 Our pre-training procedure uses the data pre-processed by [Qin et al.](https://github.com/thunlp/ERICA), which includes the entities
-and the distantly annotated relations in Wikipedia. You can also download it from [here]().
+and the distantly annotated relations in Wikipedia. You can also download it from [here](https://drive.google.com/file/d/1adx2Q6pZ4TYYwk2GUCYeyNtFXc8P2qJF/view?usp=sharing).
 
 To further pre-process the data, run:
 ```
 python preprocess wiki_entity_path_reprocess_v7.py --input_file <glob path for input data> --output_dir <output path>
 ```
-The processed data can also be downloaded from [here]().
+The processed data can also be downloaded from [here](https://drive.google.com/file/d/1pe2p9_P4PoqP2BBTFq38OnNFqWcBnOKy/view?usp=sharing).
 
 ### Running
 
@@ -73,13 +75,18 @@ conf/deberta_v2/wiki_path_deberta_v8_2_aug1_xxlarge.yaml
 ```
 To run pre-training:
 ```
-python -m torch.distributed.launch --nproc_per_node N trainer_base_mul_v2.py -cp <direction path of config> -cn <name of the config file>
+python -m torch.distributed.launch --nproc_per_node N trainer_base_mul_v2.py -cp <directory of config> -cn <name of the config file>
 ```
 DeepSpeed is also supported by using `trainer_base_mul_ds_v1.py` and relevant config is specified in the `ds_config` field of the config.
 
 ## Fine-tuning
 
-Pending...
+To run fine-tuning:
+```
+python -m torch.distributed.launch --nproc_per_node N reclor_trainer_base_v2.py -cp <directory of config> -cn <name of the config file>
+```
+
+The configs for different experiments are pending...
 
 
 ## Citation
