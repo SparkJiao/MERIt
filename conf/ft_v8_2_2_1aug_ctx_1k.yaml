@@ -39,13 +39,13 @@ output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-
 # Step 400
 #output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp400.2.0.w3.TeslaT4.s${seed}
 
-#do_train: True
-do_train: False
+do_train: True
+#do_train: False
 evaluate_during_training: True
 
 #do_eval: False
 do_eval: True
-eval_sub_path: checkpoint-1300
+eval_sub_path:
 
 # Training hyper-parameters
 per_gpu_train_batch_size: 1
@@ -54,7 +54,7 @@ per_gpu_eval_batch_size: 1
 #per_gpu_eval_batch_size: 3
 learning_rate: 1e-5
 #learning_rate: 8e-6
-gradient_accumulation_steps: 24
+gradient_accumulation_steps: 6
 weight_decay: 0.01
 adam_epsilon: 1e-6
 adam_betas: "(0.9, 0.98)"
@@ -66,13 +66,23 @@ warmup_steps: 0
 
 
 logging_steps: 5
-save_steps: 100
+#save_steps: 100
+save_steps: -1
+save_best: True
 eval_steps: 100
 no_cuda: False
 seed: 42
 local_rank: -1
 fp16: True
 fp16_opt_level: O1
+
+# Prediction config
+prediction_cfg:
+  metric: "acc"
+  measure: 1
+  best_checkpoint:
+  best_result:
+
 
 # fairscale.FullyShardedDDP
 reshard_after_forward: False

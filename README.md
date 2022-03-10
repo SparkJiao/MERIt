@@ -86,7 +86,84 @@ To run fine-tuning:
 python -m torch.distributed.launch --nproc_per_node N reclor_trainer_base_v2.py -cp <directory of config> -cn <name of the config file>
 ```
 
-The configs for different experiments are pending...
+The configs for different experiments are listed as following (the details of our used GPUs and the seed to achieve the best accuracy on the test set are also provided):
+
+**MERIt-roberta-large-v1**
+- ReClor
+  - config: conf/ft_v8_2_2_1aug_ctx_1k.yaml (4 * 2080Ti, seed=4321)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+- LogiQA
+  - config: conf/logiqa/f_logiqa_large_v8_2_1aug_ctx.yaml (1 * Tesla T4, seed=44)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+
+**MERIt-roberta-large-v1 + Prompt**
+- ReClor
+  - config: conf/p_ft_v8_2_2_1aug_ctx_1k.yaml (2 * 2080Ti, seed=43)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+- LogiQA
+  - config: conf/logiqa/pf_logiqa_large_v8_2_1aug_ctx.yaml (1 * Tesla T4, seed=44)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+
+**MERIt-roberta-large-v2**
+- ReClor
+  - config: scripts/steps/run_steps_fix.sh (2 * 2080Ti, seed=43)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+
+[comment]: <> (- LogiQA)
+
+[comment]: <> (  - config:)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+
+**MERIt-roberta-large-v2 + Prompt**
+- ReClor
+  - config: conf/roberta/p_ft_v8_2_2_1aug_ctx_fix_v3.yaml (2 * 2080Ti, seed=4321)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+
+[comment]: <> (- LogiQA)
+
+[comment]: <> (  - config:)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+
+**MERIt-alberta-v2-xxlarge**
+- ReClor
+  - config: conf/albert/albert_ft_v822_1aug_ctx (2 * TitanXP, seed=4321)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+- LogiQA
+  - config: conf/albert/logiqa_albert_ft_v822_1aug_ctx.yaml (1 * 2080Ti, seed=42)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+
+
+**MERIt-alberta-v2-xxlarge + Prompt**
+- ReClor
+  - config: conf/albert/albert_pt_v822_1aug_ctx.yaml (2 * TeslaT4, seed=44)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+- LogiQA
+  - config: conf/albert/logiqa_albert_pt_v822_1aug_ctx.yaml (1 * 2080Ti, seed=43)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+
+**MERIt-deberta-v2-xlarge**
+- ReClor
+  - config: conf/deberta_v2/deberta_ft_path_v1_4_2.yaml (2 * A100, seed=42)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
+
+**MERIt-deberta-v2-xxlarge**
+- ReClor
+  - config: conf/deberta_v2/deberta_xxlarge_ft_path.yaml (2 * A100, seed=42)
+
+[comment]: <> (  - [checkpoint]&#40;&#41;)
 
 
 ## Citation

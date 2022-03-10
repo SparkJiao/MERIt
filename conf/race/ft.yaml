@@ -2,7 +2,8 @@ hydra:
   run:
     dir: ./
 
-train_file: /home/share/jiaofangkai/RACE/race-train-reclor.json
+#train_file: /home/share/jiaofangkai/RACE/race-train-reclor.json
+train_file: /home/share/jiaofangkai/RACE/race-dev-reclor.json
 dev_file: /home/share/jiaofangkai/RACE/race-dev-reclor.json
 test_file: /home/share/jiaofangkai/RACE/race-test-reclor.json
 
@@ -31,12 +32,12 @@ prefetch_factor: 2
 
 # Wiki path pretrain v8.2
 #model_name_or_path: experiments/roberta.large.wiki_erica_path_v7_v8.2.2.1aug.ctx.1k.2080Ti/checkpoint-500
-model_name_or_path: pretrained-models/roberta-large
+model_name_or_path: pretrained-models/roberta-base
 
 pretrain:
 
 #output_dir: experiments/race.roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.2.0.w2.2080Ti.s${seed}
-output_dir: experiments/race.roberta.large.2.0.w2.2080Ti.s${seed}
+output_dir: experiments/race.roberta.base.2.0.w2.2080Ti.s${seed}
 
 do_train: True
 evaluate_during_training: True

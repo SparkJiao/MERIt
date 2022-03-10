@@ -46,12 +46,12 @@ pretrain:
 #output_dir: experiments/albert.xxlarge.path.v822.1aug.ctx.6.0.w1.TeslaT4.et${read_tensor.token_num}.s${seed}  # batch size = 8
 #output_dir: experiments/albert.xxlarge.path.v822.1aug.ctx.6.0.w2.TeslaT4.et${read_tensor.token_num}.s${seed}
 
-#output_dir: experiments/albert.logiqa.path.v822.1aug.ctx.5.1.w1.dp0.1.2080Ti.et${read_tensor.token_num}.s${seed}
+output_dir: experiments/albert.logiqa.path.v822.1aug.ctx.5.1.w1.dp0.1.2080Ti.et${read_tensor.token_num}.s${seed}
 #output_dir: experiments/albert.logiqa.path.v822.1aug.ctx.5.1.w1.2080Ti.et${read_tensor.token_num}.s${seed}
 #output_dir: experiments/albert.logiqa.path.v822.1aug.ctx.5.3.w2.dp0.1.TitanXP.et${read_tensor.token_num}.s${seed}
 #output_dir: experiments/albert.logiqa.path.v822.1aug.ctx.5.3.w4.dp0.1.TeslaT4.et${read_tensor.token_num}.s${seed}
 #output_dir: experiments/albert.logiqa.path.v822.1aug.ctx.5.3.w1.2080Ti.et${read_tensor.token_num}.s${seed}
-output_dir: experiments/albert.logiqa.path.v822.1aug.ctx.5.3.w1.2080Ti.8bit.et${read_tensor.token_num}.s${seed}
+#output_dir: experiments/albert.logiqa.path.v822.1aug.ctx.5.3.w1.2080Ti.8bit.et${read_tensor.token_num}.s${seed}
 
 do_train: True
 #do_train: False

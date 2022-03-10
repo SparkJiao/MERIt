@@ -71,13 +71,22 @@ warmup_steps: 0
 
 
 logging_steps: 5
-save_steps: 200
+save_steps: -1
+save_best: True
 eval_steps: 200
 no_cuda: False
 seed: 42
 local_rank: -1
 fp16: True
 fp16_opt_level: O1
+
+
+# Prediction config
+prediction_cfg:
+  metric: "acc"
+  measure: 1
+  best_checkpoint:
+  best_result:
 
 # fairscale.FullyShardedDDP
 reshard_after_forward: False

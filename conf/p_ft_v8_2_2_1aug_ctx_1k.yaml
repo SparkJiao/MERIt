@@ -43,8 +43,9 @@ pretrain:
 
 #output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.5.0.w4.2080Ti.s${seed}
 #output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.5.1.w4.2080Ti.s${seed}
+output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.5.1.w2.2080Ti.et5.s${seed}
 #output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.5.2.w1.2080Ti.s${seed}
-output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.5.1.w3.TeslaT4.es${read_tensor.token_num}.s${seed}
+#output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.5.1.w3.TeslaT4.es${read_tensor.token_num}.s${seed}
 #output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.6.0.w3.TitanXP.s${seed}
 #output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.6.0.w4.2080Ti.s${seed}
 #output_dir: experiments/roberta.large.wiki_erica_path_v8.2.2.1aug.ctx.1k.2080ti-cp500.6.1.w2.TeslaT4.s${seed}
@@ -79,7 +80,8 @@ warmup_steps: 0
 
 
 logging_steps: 5
-save_steps: 100
+save_steps: -1
+save_best: True
 eval_steps: 100
 no_cuda: False
 seed: 42
