@@ -50,7 +50,7 @@ and the distantly annotated relations in Wikipedia. You can also download it fro
 
 To further pre-process the data, run:
 ```
-python preprocess wiki_entity_path_reprocess_v7.py --input_file <glob path for input data> --output_dir <output path>
+python preprocess/wiki_entity_path_preprocess_v7.py --input_file <glob path for input data> --output_dir <output path>
 ```
 The processed data can also be downloaded from [here](https://drive.google.com/file/d/1pe2p9_P4PoqP2BBTFq38OnNFqWcBnOKy/view?usp=sharing).
 
